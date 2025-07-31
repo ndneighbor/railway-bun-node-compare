@@ -354,7 +354,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             console.log(`[${runtime}] stdout:`, chunk.trim());
         });
         
-        // Stream stderr (progress info)
+        // Stream stderr (progress info) - just pipe the raw output
         oha.stderr.on('data', (data) => {
             const chunk = data.toString();
             errorOutput += chunk;
@@ -362,97 +362,18 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             
             if (!hasStarted) {
                 hasStarted = true;
-                broadcast({
-                    type: 'ohaProgress',
-                    sessionId,
-                    runtime,
-                    message: `oha process started for ${runtime}`,
-                    stats: currentStats,
-                    rawOutput: 'Process started...'
-                });
             }
             
-            // Parse progress information from oha's stderr
+            // Just broadcast the raw oha output to the browser
             const lines = chunk.split('\n').filter(line => line.trim());
-            
             for (const line of lines) {
-                // Look for various types of oha output
-                console.log(`[${runtime}] Processing line:`, line.trim());
-                
-                // Extract metrics from different possible formats
-                const rpsMatch = line.match(/(\d+(?:\.\d+)?)\s*(?:req\/s|RPS|requests\/sec)/i);
-                const avgMatch = line.match(/(?:avg|average|mean)[\s:]*(\d+(?:\.\d+)?)\s*(?:ms|µs)/i);
-                const errorMatch = line.match(/(\d+)\s*(?:errors?|failed|timeouts?)/i);
-                const requestMatch = line.match(/(\d+)\s*(?:requests?|req)/i);
-                const completeMatch = line.match(/(\d+)\s*(?:completed|responses?|success|2xx)/i);
-                
-                // Also try to extract from status lines like "Running [30s] - 1234/2000"
-                const statusMatch = line.match(/Running\s*\[\d+s\]\s*-\s*(\d+)\/(\d+)/i);
-                const progressMatch = line.match(/(\d+(?:\.\d+)?)%/);
-                
-                // Try to extract from throughput lines like "Throughput: 123.45 [#/sec]"
-                const throughputMatch = line.match(/throughput[\s:]*(\d+(?:\.\d+)?)/i);
-                
-                // Extract latency from lines like "Latency    123.45ms"
-                const latencyMatch = line.match(/latency[\s:]*(\d+(?:\.\d+)?)\s*(?:ms|µs)/i);
-                
-                let updated = false;
-                if (rpsMatch) {
-                    currentStats.requestsPerSecond = parseFloat(rpsMatch[1]);
-                    updated = true;
-                }
-                if (avgMatch) {
-                    let latency = parseFloat(avgMatch[1]);
-                    // Convert microseconds to milliseconds if needed
-                    if (line.includes('µs')) latency = latency / 1000;
-                    currentStats.avgResponseTime = latency;
-                    updated = true;
-                }
-                if (latencyMatch) {
-                    let latency = parseFloat(latencyMatch[1]);
-                    if (line.includes('µs')) latency = latency / 1000;
-                    currentStats.avgResponseTime = latency;
-                    updated = true;
-                }
-                if (throughputMatch) {
-                    currentStats.requestsPerSecond = parseFloat(throughputMatch[1]);
-                    updated = true;
-                }
-                if (errorMatch) {
-                    currentStats.errors = parseInt(errorMatch[1]);
-                    updated = true;
-                }
-                if (requestMatch) {
-                    currentStats.requests = parseInt(requestMatch[1]);
-                    updated = true;
-                }
-                if (completeMatch) {
-                    currentStats.responses = parseInt(completeMatch[1]);
-                    updated = true;
-                }
-                if (statusMatch) {
-                    currentStats.requests = parseInt(statusMatch[2]); // Total
-                    currentStats.responses = parseInt(statusMatch[1]); // Completed
-                    updated = true;
-                }
-                
-                // Ensure responses is calculated if not explicitly set
-                if (!completeMatch && !statusMatch) {
-                    currentStats.responses = Math.max(0, currentStats.requests - currentStats.errors);
-                }
-                
-                // Broadcast progress if we extracted any metrics or if it looks like a status line
-                if (updated || line.includes('%') || line.includes('req/s') || line.includes('ms')) {
-                    console.log(`[${runtime}] Broadcasting stats:`, currentStats);
-                    broadcast({
-                        type: 'ohaProgress',
-                        sessionId,
-                        runtime,
-                        message: line.trim(),
-                        stats: { ...currentStats },
-                        rawOutput: line.trim()
-                    });
-                }
+                broadcast({
+                    type: 'ohaRawOutput',
+                    sessionId,
+                    runtime,
+                    message: line.trim(),
+                    rawOutput: line.trim()
+                });
             }
         });
         

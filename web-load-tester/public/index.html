@@ -802,6 +802,9 @@
                     case 'ohaError':
                         this.logOhaMessage(data.runtime, data.message, 'error');
                         break;
+                    case 'ohaRawOutput':
+                        this.logOhaMessage(data.runtime, data.rawOutput, 'raw');
+                        break;
                 }
             }
 
@@ -813,7 +816,8 @@
                     start: '🚀',
                     progress: '⚡',
                     completed: '✅',
-                    error: '❌'
+                    error: '❌',
+                    raw: '📟'
                 }[type] || '📊';
                 
                 log.innerHTML += `[${timestamp}] ${typeIcon} ${runtimeLabel}: ${message}\n`;

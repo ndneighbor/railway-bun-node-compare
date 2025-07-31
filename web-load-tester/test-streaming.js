@@ -64,6 +64,10 @@ async function testStreamingComparison() {
                     }
                     break;
                 
+                case 'ohaRawOutput':
+                    console.log(`📟 [${message.runtime.toUpperCase()}] ${message.rawOutput}`);
+                    break;
+                
                 case 'completed':
                     console.log('🏁 Comparison test completed!');
                     console.log(`   🏆 Winner: ${message.comparison.winner.toUpperCase()}`);

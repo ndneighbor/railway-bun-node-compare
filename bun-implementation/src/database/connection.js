@@ -2,11 +2,25 @@ import postgres from 'postgres';
 
 class Database {
     constructor() {
-        this.sql = postgres(process.env.DATABASE_URL, {
+        const databaseUrl = process.env.DATABASE_URL;
+        
+        if (!databaseUrl) {
+            throw new Error('DATABASE_URL environment variable is required');
+        }
+
+        this.sql = postgres(databaseUrl, {
             ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
             max: 20,
-            idle_timeout: 20,
-            connect_timeout: 10,
+            idle_timeout: 20000, // 20 seconds in milliseconds
+            connect_timeout: 10000, // 10 seconds in milliseconds
+            connection: {
+                application_name: 'bookstore-bun',
+            },
+            transform: {
+                undefined: null
+            },
+            onnotice: () => {}, // Suppress notices
+            debug: process.env.NODE_ENV === 'development'
         });
     }
 

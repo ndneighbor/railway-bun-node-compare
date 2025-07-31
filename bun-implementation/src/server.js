@@ -238,6 +238,27 @@ async function startServer() {
     try {
         console.log('🚀 Starting Bun Bookstore Server...');
         
+        // Validate environment variables
+        if (!process.env.DATABASE_URL) {
+            console.error('❌ DATABASE_URL environment variable is required');
+            process.exit(1);
+        }
+        
+        console.log('📊 Environment Check:');
+        console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`   PORT: ${PORT}`);
+        console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? '✅ Set' : '❌ Missing'}`);
+        console.log(`   Runtime: ${process.env.RUNTIME_NAME || 'bun'}`);
+        
+        // Test database connection
+        try {
+            await db.sql`SELECT 1 as test`;
+            console.log('✅ Database connection successful');
+        } catch (dbError) {
+            console.error('❌ Database connection failed:', dbError.message);
+            process.exit(1);
+        }
+        
         // Run migrations
         if (process.env.NODE_ENV !== 'test') {
             await runMigrations();

@@ -172,6 +172,106 @@
             margin-bottom: 20px;
         }
 
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .runtime-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border: 2px solid #e9ecef;
+        }
+
+        .runtime-section.node {
+            border-color: #28a745;
+        }
+
+        .runtime-section.bun {
+            border-color: #fd7e14;
+        }
+
+        .runtime-section.winner {
+            background: #d4edda;
+            border-color: #28a745;
+            box-shadow: 0 0 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .runtime-title {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .runtime-title h3 {
+            margin: 0;
+            margin-left: 10px;
+        }
+
+        .runtime-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .runtime-icon.node {
+            background: #28a745;
+        }
+
+        .runtime-icon.bun {
+            background: #fd7e14;
+        }
+
+        .winner-badge {
+            background: #28a745;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: auto;
+        }
+
+        .comparison-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .comparison-summary h2 {
+            margin: 0 0 10px 0;
+        }
+
+        .advantage-list {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+
+        .advantage-list li {
+            background: #e9ecef;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .advantage-list li.advantage {
+            background: #d4edda;
+            color: #155724;
+        }
+
         .stat-card {
             background: #f8f9fa;
             padding: 15px;
@@ -286,8 +386,8 @@
     
     <div class="container">
         <div class="header">
-            <h1>🚀 Bookstore Load Tester</h1>
-            <p>Performance testing for Node.js vs Bun comparison</p>
+            <h1>⚡ Node.js vs Bun Performance Battle</h1>
+            <p>Side-by-side load testing and comparison</p>
         </div>
 
         <!-- Configuration Section -->
@@ -295,8 +395,13 @@
             <h2>Load Test Configuration</h2>
             
             <div class="form-group">
-                <label for="targetUrl">Target URL:</label>
-                <input type="url" id="targetUrl" placeholder="https://your-bookstore-api.railway.app" required>
+                <label for="nodeUrl">Node.js Implementation URL:</label>
+                <input type="url" id="nodeUrl" placeholder="https://node-bookstore.railway.app" required>
+            </div>
+
+            <div class="form-group">
+                <label for="bunUrl">Bun Implementation URL:</label>
+                <input type="url" id="bunUrl" placeholder="https://bun-bookstore.railway.app" required>
             </div>
 
             <div class="form-group">
@@ -307,79 +412,153 @@
             </div>
 
             <div class="form-group">
-                <button class="btn" id="startTestBtn">Start Load Test</button>
+                <button class="btn" id="startTestBtn">🥊 Start Performance Battle</button>
             </div>
         </div>
 
         <!-- Progress Section -->
         <div class="card progress-section" id="progressSection">
-            <h2>Test Progress</h2>
+            <h2>Battle in Progress</h2>
             
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
+
+            <div class="comparison-summary" id="liveWinner">
+                <h2 id="currentWinnerText">🥊 Battle Starting...</h2>
+                <p id="currentWinnerDesc">Warming up both runtimes...</p>
+            </div>
             
-            <div class="stats-grid" id="statsGrid">
-                <div class="stat-card">
-                    <div class="stat-value" id="requestsCount">0</div>
-                    <div class="stat-label">Requests</div>
+            <div class="comparison-grid">
+                <div class="runtime-section node">
+                    <div class="runtime-title">
+                        <div class="runtime-icon node">N</div>
+                        <h3>Node.js</h3>
+                        <div class="winner-badge" id="nodeWinnerBadge" style="display: none;">WINNING</div>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="nodeRequests">0</div>
+                            <div class="stat-label">Requests</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="nodeResponses">0</div>
+                            <div class="stat-label">Responses</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="nodeAvgTime">0ms</div>
+                            <div class="stat-label">Avg Response</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="nodeRps">0</div>
+                            <div class="stat-label">RPS</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="nodeErrors">0</div>
+                            <div class="stat-label">Errors</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="nodeErrorRate">0%</div>
+                            <div class="stat-label">Error Rate</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="responsesCount">0</div>
-                    <div class="stat-label">Responses</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="errorsCount">0</div>
-                    <div class="stat-label">Errors</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="avgResponseTime">0ms</div>
-                    <div class="stat-label">Avg Response Time</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="errorRate">0%</div>
-                    <div class="stat-label">Error Rate</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="rps">0</div>
-                    <div class="stat-label">Requests/sec</div>
+
+                <div class="runtime-section bun">
+                    <div class="runtime-title">
+                        <div class="runtime-icon bun">B</div>
+                        <h3>Bun</h3>
+                        <div class="winner-badge" id="bunWinnerBadge" style="display: none;">WINNING</div>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="bunRequests">0</div>
+                            <div class="stat-label">Requests</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bunResponses">0</div>
+                            <div class="stat-label">Responses</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bunAvgTime">0ms</div>
+                            <div class="stat-label">Avg Response</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bunRps">0</div>
+                            <div class="stat-label">RPS</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bunErrors">0</div>
+                            <div class="stat-label">Errors</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="bunErrorRate">0%</div>
+                            <div class="stat-label">Error Rate</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="form-group">
-                <button class="btn btn-danger" id="stopTestBtn">Stop Test</button>
+                <button class="btn btn-danger" id="stopTestBtn">Stop Battle</button>
             </div>
 
             <div class="form-group">
-                <h3>Live Log</h3>
+                <h3>Battle Log</h3>
                 <div class="log" id="liveLog"></div>
             </div>
         </div>
 
         <!-- Results Section -->
         <div class="card results-section" id="resultsSection">
-            <h2>Test Results</h2>
+            <h2>🏆 Battle Results</h2>
             
+            <div class="comparison-summary" id="finalWinner">
+                <h2 id="finalWinnerText">🎉 Results Loading...</h2>
+                <p id="finalWinnerDesc">Calculating final scores...</p>
+                <div id="advantagesList"></div>
+            </div>
+
+            <div class="comparison-grid">
+                <div class="runtime-section node" id="nodeFinalSection">
+                    <div class="runtime-title">
+                        <div class="runtime-icon node">N</div>
+                        <h3>Node.js Final Stats</h3>
+                        <div class="winner-badge" id="nodeFinalBadge" style="display: none;">WINNER</div>
+                    </div>
+                    <div id="nodeResults"></div>
+                </div>
+
+                <div class="runtime-section bun" id="bunFinalSection">
+                    <div class="runtime-title">
+                        <div class="runtime-icon bun">B</div>
+                        <h3>Bun Final Stats</h3>
+                        <div class="winner-badge" id="bunFinalBadge" style="display: none;">WINNER</div>
+                    </div>
+                    <div id="bunResults"></div>
+                </div>
+            </div>
+
             <div class="results-grid">
                 <div class="results-card">
-                    <h3>Summary</h3>
-                    <div id="resultsSummary"></div>
+                    <h3>Performance Gap Analysis</h3>
+                    <div id="performanceGap"></div>
                 </div>
                 
                 <div class="results-card">
-                    <h3>Response Time Percentiles</h3>
-                    <div id="percentilesData"></div>
+                    <h3>Response Time Comparison</h3>
+                    <div id="responseTimeComparison"></div>
                 </div>
                 
                 <div class="results-card">
-                    <h3>Error Breakdown</h3>
-                    <div class="error-list" id="errorBreakdown"></div>
+                    <h3>Error Analysis</h3>
+                    <div id="errorComparison"></div>
                 </div>
             </div>
 
             <div class="form-group">
-                <button class="btn" id="exportResultsBtn">Export Results</button>
-                <button class="btn" id="newTestBtn">Start New Test</button>
+                <button class="btn" id="exportResultsBtn">Export Battle Results</button>
+                <button class="btn" id="newTestBtn">Start New Battle</button>
             </div>
         </div>
     </div>
@@ -487,10 +666,11 @@
             }
 
             async startTest() {
-                const targetUrl = document.getElementById('targetUrl').value.trim();
+                const nodeUrl = document.getElementById('nodeUrl').value.trim();
+                const bunUrl = document.getElementById('bunUrl').value.trim();
                 
-                if (!targetUrl) {
-                    alert('Please enter a target URL');
+                if (!nodeUrl || !bunUrl) {
+                    alert('Please enter both Node.js and Bun URLs');
                     return;
                 }
                 
@@ -504,7 +684,8 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            targetUrl: targetUrl,
+                            nodeUrl: nodeUrl,
+                            bunUrl: bunUrl,
                             configName: this.selectedConfig
                         })
                     });
@@ -514,13 +695,15 @@
                     if (response.ok) {
                         this.currentSessionId = result.sessionId;
                         this.showProgressSection();
-                        this.logMessage(`Test started: ${result.sessionId}`);
+                        this.logMessage(`🥊 Battle started: ${result.sessionId}`);
+                        this.logMessage(`Node.js: ${nodeUrl}`);
+                        this.logMessage(`Bun: ${bunUrl}`);
                     } else {
                         alert(`Error: ${result.error}`);
                     }
                 } catch (error) {
                     console.error('Failed to start test:', error);
-                    alert('Failed to start test');
+                    alert('Failed to start battle');
                 }
             }
 
@@ -555,70 +738,194 @@
             }
 
             updateProgress(data) {
-                const { progress, stats } = data;
+                const { progress, comparison } = data;
                 
                 // Update progress bar
                 document.getElementById('progressFill').style.width = `${progress}%`;
                 
-                // Update stats
-                document.getElementById('requestsCount').textContent = stats.requests.toLocaleString();
-                document.getElementById('responsesCount').textContent = stats.responses.toLocaleString();
-                document.getElementById('errorsCount').textContent = stats.errors.toLocaleString();
-                document.getElementById('avgResponseTime').textContent = `${stats.avgResponseTime}ms`;
-                document.getElementById('errorRate').textContent = `${stats.errorRate}%`;
-                document.getElementById('rps').textContent = stats.rps.toFixed(1);
+                // Update Node.js stats
+                const node = comparison.node;
+                document.getElementById('nodeRequests').textContent = node.requests.toLocaleString();
+                document.getElementById('nodeResponses').textContent = node.responses.toLocaleString();
+                document.getElementById('nodeErrors').textContent = node.errors.toLocaleString();
+                document.getElementById('nodeAvgTime').textContent = `${node.avgResponseTime}ms`;
+                document.getElementById('nodeErrorRate').textContent = `${node.errorRate}%`;
+                document.getElementById('nodeRps').textContent = node.rps.toFixed(1);
+                
+                // Update Bun stats
+                const bun = comparison.bun;
+                document.getElementById('bunRequests').textContent = bun.requests.toLocaleString();
+                document.getElementById('bunResponses').textContent = bun.responses.toLocaleString();
+                document.getElementById('bunErrors').textContent = bun.errors.toLocaleString();
+                document.getElementById('bunAvgTime').textContent = `${bun.avgResponseTime}ms`;
+                document.getElementById('bunErrorRate').textContent = `${bun.errorRate}%`;
+                document.getElementById('bunRps').textContent = bun.rps.toFixed(1);
+                
+                // Update winner display
+                const nodeSection = document.querySelector('.runtime-section.node');
+                const bunSection = document.querySelector('.runtime-section.bun');
+                const nodeBadge = document.getElementById('nodeWinnerBadge');
+                const bunBadge = document.getElementById('bunWinnerBadge');
+                
+                // Reset winner styling
+                nodeSection.classList.remove('winner');
+                bunSection.classList.remove('winner');
+                nodeBadge.style.display = 'none';
+                bunBadge.style.display = 'none';
+                
+                // Update current winner
+                let winnerText = '🤝 It\'s a tie!';
+                let winnerDesc = 'Both runtimes performing equally';
+                
+                if (comparison.winner === 'node') {
+                    nodeSection.classList.add('winner');
+                    nodeBadge.style.display = 'block';
+                    winnerText = '🟢 Node.js is winning!';
+                    winnerDesc = `Faster response time: ${node.avgResponseTime}ms vs ${bun.avgResponseTime}ms`;
+                } else if (comparison.winner === 'bun') {
+                    bunSection.classList.add('winner');
+                    bunBadge.style.display = 'block';
+                    winnerText = '🟠 Bun is winning!';
+                    winnerDesc = `Faster response time: ${bun.avgResponseTime}ms vs ${node.avgResponseTime}ms`;
+                }
+                
+                document.getElementById('currentWinnerText').textContent = winnerText;
+                document.getElementById('currentWinnerDesc').textContent = winnerDesc;
                 
                 // Log progress
-                this.logMessage(`Progress: ${progress.toFixed(1)}% - RPS: ${stats.rps.toFixed(1)} - Avg: ${stats.avgResponseTime}ms`);
+                this.logMessage(`Progress: ${progress.toFixed(1)}% | Node: ${node.rps.toFixed(1)} RPS, ${node.avgResponseTime}ms | Bun: ${bun.rps.toFixed(1)} RPS, ${bun.avgResponseTime}ms | Winner: ${comparison.winner.toUpperCase()}`);
             }
 
             showResults(data) {
-                const { session } = data;
-                const stats = session.finalStats;
+                const { session, comparison, stats } = data;
                 
                 // Hide progress, show results
                 document.getElementById('progressSection').classList.remove('active');
                 document.getElementById('resultsSection').classList.add('active');
                 
-                // Summary
-                const summary = document.getElementById('resultsSummary');
-                summary.innerHTML = `
-                    <div><strong>Duration:</strong> ${stats.duration}s</div>
-                    <div><strong>Total Requests:</strong> ${stats.totalRequests.toLocaleString()}</div>
-                    <div><strong>Successful:</strong> ${stats.totalResponses.toLocaleString()}</div>
-                    <div><strong>Failed:</strong> ${stats.totalErrors.toLocaleString()}</div>
-                    <div><strong>Success Rate:</strong> ${(100 - stats.errorRate).toFixed(2)}%</div>
-                    <div><strong>Avg Response Time:</strong> ${stats.avgResponseTime}ms</div>
-                    <div><strong>Requests/sec:</strong> ${stats.rps}</div>
-                `;
+                // Final winner display
+                let winnerEmoji = '🤝';
+                let winnerText = 'It\'s a tie!';
+                let winnerDesc = 'Both runtimes performed equally well';
                 
-                // Percentiles
-                const percentiles = document.getElementById('percentilesData');
-                percentiles.innerHTML = `
-                    <div><strong>50th percentile:</strong> ${stats.percentiles.p50}ms</div>
-                    <div><strong>95th percentile:</strong> ${stats.percentiles.p95}ms</div>
-                    <div><strong>99th percentile:</strong> ${stats.percentiles.p99}ms</div>
-                `;
-                
-                // Error breakdown
-                const errorBreakdown = document.getElementById('errorBreakdown');
-                errorBreakdown.innerHTML = '';
-                
-                if (Object.keys(stats.errorTypes).length > 0) {
-                    Object.entries(stats.errorTypes).forEach(([error, count]) => {
-                        const errorItem = document.createElement('div');
-                        errorItem.className = 'error-item';
-                        errorItem.innerHTML = `
-                            <span>${error}</span>
-                            <span>${count}</span>
-                        `;
-                        errorBreakdown.appendChild(errorItem);
-                    });
-                } else {
-                    errorBreakdown.innerHTML = '<div>No errors occurred</div>';
+                if (comparison.winner === 'node') {
+                    winnerEmoji = '🏆';
+                    winnerText = 'Node.js Wins!';
+                    winnerDesc = `Node.js outperformed Bun in ${comparison.nodeAdvantages.length} key metrics`;
+                    document.getElementById('nodeFinalSection').classList.add('winner');
+                    document.getElementById('nodeFinalBadge').style.display = 'block';
+                } else if (comparison.winner === 'bun') {
+                    winnerEmoji = '🏆';
+                    winnerText = 'Bun Wins!';
+                    winnerDesc = `Bun outperformed Node.js in ${comparison.bunAdvantages.length} key metrics`;
+                    document.getElementById('bunFinalSection').classList.add('winner');
+                    document.getElementById('bunFinalBadge').style.display = 'block';
                 }
                 
-                this.logMessage('Test completed successfully!');
+                document.getElementById('finalWinnerText').textContent = `${winnerEmoji} ${winnerText}`;
+                document.getElementById('finalWinnerDesc').textContent = winnerDesc;
+                
+                // Advantages list
+                const advantagesList = document.getElementById('advantagesList');
+                let advantagesHtml = '';
+                
+                if (comparison.nodeAdvantages.length > 0) {
+                    advantagesHtml += '<h4>Node.js Advantages:</h4><ul class="advantage-list">';
+                    comparison.nodeAdvantages.forEach(advantage => {
+                        const label = this.getAdvantageLabel(advantage);
+                        advantagesHtml += `<li class="advantage">${label}</li>`;
+                    });
+                    advantagesHtml += '</ul>';
+                }
+                
+                if (comparison.bunAdvantages.length > 0) {
+                    advantagesHtml += '<h4>Bun Advantages:</h4><ul class="advantage-list">';
+                    comparison.bunAdvantages.forEach(advantage => {
+                        const label = this.getAdvantageLabel(advantage);
+                        advantagesHtml += `<li class="advantage">${label}</li>`;
+                    });
+                    advantagesHtml += '</ul>';
+                }
+                
+                advantagesList.innerHTML = advantagesHtml;
+                
+                // Node.js results
+                const nodeResults = document.getElementById('nodeResults');
+                nodeResults.innerHTML = this.formatRuntimeResults(stats.node);
+                
+                // Bun results
+                const bunResults = document.getElementById('bunResults');
+                bunResults.innerHTML = this.formatRuntimeResults(stats.bun);
+                
+                // Performance gap analysis
+                const performanceGap = document.getElementById('performanceGap');
+                performanceGap.innerHTML = `
+                    <div><strong>Response Time Gap:</strong> ${comparison.performanceGap.responseTime}ms</div>
+                    <div><strong>Throughput Gap:</strong> ${comparison.performanceGap.throughput.toFixed(1)} RPS</div>
+                    <div><strong>Error Rate Gap:</strong> ${comparison.performanceGap.errorRate.toFixed(2)}%</div>
+                `;
+                
+                // Response time comparison
+                const responseTimeComparison = document.getElementById('responseTimeComparison');
+                responseTimeComparison.innerHTML = `
+                    <div><strong>Node.js:</strong> ${stats.node.avgResponseTime}ms avg (P95: ${stats.node.percentiles.p95}ms)</div>
+                    <div><strong>Bun:</strong> ${stats.bun.avgResponseTime}ms avg (P95: ${stats.bun.percentiles.p95}ms)</div>
+                    <div><strong>Winner:</strong> ${stats.node.avgResponseTime < stats.bun.avgResponseTime ? 'Node.js' : 'Bun'} 
+                         (${Math.abs(stats.node.avgResponseTime - stats.bun.avgResponseTime)}ms faster)</div>
+                `;
+                
+                // Error comparison
+                const errorComparison = document.getElementById('errorComparison');
+                const nodeErrors = Object.keys(stats.node.errorTypes).length;
+                const bunErrors = Object.keys(stats.bun.errorTypes).length;
+                errorComparison.innerHTML = `
+                    <div><strong>Node.js:</strong> ${stats.node.totalErrors} errors (${stats.node.errorRate}%)</div>
+                    <div><strong>Bun:</strong> ${stats.bun.totalErrors} errors (${stats.bun.errorRate}%)</div>
+                    <div><strong>More Reliable:</strong> ${stats.node.errorRate < stats.bun.errorRate ? 'Node.js' : 'Bun'}</div>
+                `;
+                
+                this.logMessage(`🏁 Battle completed! Winner: ${comparison.winner.toUpperCase()}`);
+            }
+
+            getAdvantageLabel(advantage) {
+                const labels = {
+                    'faster_response_time': '⚡ Faster Response Time',
+                    'higher_throughput': '🚀 Higher Throughput',
+                    'lower_error_rate': '🛡️ Lower Error Rate',
+                    'better_p95_latency': '📊 Better P95 Latency'
+                };
+                return labels[advantage] || advantage;
+            }
+
+            formatRuntimeResults(stats) {
+                return `
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.totalRequests.toLocaleString()}</div>
+                            <div class="stat-label">Total Requests</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.avgResponseTime}ms</div>
+                            <div class="stat-label">Avg Response</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.rps}</div>
+                            <div class="stat-label">RPS</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.errorRate}%</div>
+                            <div class="stat-label">Error Rate</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.percentiles.p50}ms</div>
+                            <div class="stat-label">P50</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.percentiles.p95}ms</div>
+                            <div class="stat-label">P95</div>
+                        </div>
+                    </div>
+                `;
             }
 
             showProgressSection() {

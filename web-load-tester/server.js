@@ -140,10 +140,10 @@ app.get('/api/sessions', (req, res) => {
 // Start a load test
 app.post('/api/test/start', async (req, res) => {
     try {
-        const { targetUrl, configName, customConfig } = req.body;
+        const { nodeUrl, bunUrl, configName, customConfig } = req.body;
 
-        if (!targetUrl) {
-            return res.status(400).json({ error: 'Target URL is required' });
+        if (!nodeUrl || !bunUrl) {
+            return res.status(400).json({ error: 'Both Node.js and Bun URLs are required' });
         }
 
         // Get configuration
@@ -153,32 +153,51 @@ app.post('/api/test/start', async (req, res) => {
         }
 
         // Generate session ID
-        const sessionId = `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const sessionId = `comparison_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-        // Create session
+        // Create comparison session
         const session = {
             id: sessionId,
-            targetUrl,
+            nodeUrl,
+            bunUrl,
             config,
             startTime: new Date(),
             status: 'running',
             progress: 0,
             results: {
-                requests: 0,
-                responses: 0,
-                errors: 0,
-                totalTime: 0,
-                responseTimes: [],
-                errorTypes: {}
+                node: {
+                    runtime: 'node',
+                    requests: 0,
+                    responses: 0,
+                    errors: 0,
+                    totalTime: 0,
+                    responseTimes: [],
+                    errorTypes: {}
+                },
+                bun: {
+                    runtime: 'bun',
+                    requests: 0,
+                    responses: 0,
+                    errors: 0,
+                    totalTime: 0,
+                    responseTimes: [],
+                    errorTypes: {}
+                }
+            },
+            comparison: {
+                winner: null,
+                nodeAdvantage: 0,
+                bunAdvantage: 0,
+                metrics: {}
             }
         };
 
         activeSessions.set(sessionId, session);
 
-        // Start the load test
-        runLoadTest(sessionId, targetUrl, config);
+        // Start parallel load tests for both runtimes
+        runComparisonTest(sessionId, nodeUrl, bunUrl, config);
 
-        res.json({ sessionId, message: 'Load test started' });
+        res.json({ sessionId, message: 'Comparison test started' });
 
     } catch (error) {
         console.error('Error starting test:', error);
@@ -219,8 +238,8 @@ app.get('/api/test/results/:sessionId', (req, res) => {
     res.json(session);
 });
 
-// Load test runner
-async function runLoadTest(sessionId, targetUrl, config) {
+// Comparison test runner
+async function runComparisonTest(sessionId, nodeUrl, bunUrl, config) {
     const session = activeSessions.get(sessionId);
     if (!session) return;
 
@@ -228,12 +247,13 @@ async function runLoadTest(sessionId, targetUrl, config) {
     const startTime = Date.now();
     const endTime = startTime + (duration * 1000);
     const rampUpInterval = (rampUp * 1000) / users;
+    const usersPerRuntime = Math.floor(users / 2);
 
-    console.log(`Starting load test ${sessionId}: ${users} users, ${duration}s duration`);
+    console.log(`Starting comparison test ${sessionId}: ${users} users (${usersPerRuntime} each), ${duration}s duration`);
 
-    // Function to make a request
-    async function makeRequest(endpoint) {
-        const url = targetUrl + endpoint;
+    // Function to make a request to a specific runtime
+    async function makeRequest(runtime, baseUrl, endpoint) {
+        const url = baseUrl + endpoint;
         const requestStart = Date.now();
 
         try {
@@ -241,44 +261,47 @@ async function runLoadTest(sessionId, targetUrl, config) {
                 method: 'GET',
                 timeout: 10000,
                 headers: {
-                    'User-Agent': 'BookstoreLoadTester/1.0',
+                    'User-Agent': `BookstoreLoadTester/1.0-${runtime}`,
                     'Accept': 'application/json'
                 }
             });
 
             const responseTime = Date.now() - requestStart;
+            const results = session.results[runtime];
             
-            session.results.requests++;
-            session.results.responses++;
-            session.results.totalTime += responseTime;
-            session.results.responseTimes.push(responseTime);
+            results.requests++;
+            results.responses++;
+            results.totalTime += responseTime;
+            results.responseTimes.push(responseTime);
 
             // Keep only last 100 response times for memory efficiency
-            if (session.results.responseTimes.length > 100) {
-                session.results.responseTimes.shift();
+            if (results.responseTimes.length > 100) {
+                results.responseTimes.shift();
             }
 
             return { success: true, responseTime, status: response.status };
 
         } catch (error) {
             const responseTime = Date.now() - requestStart;
-            session.results.requests++;
-            session.results.errors++;
+            const results = session.results[runtime];
+            
+            results.requests++;
+            results.errors++;
             
             const errorType = error.code || error.name || 'Unknown';
-            session.results.errorTypes[errorType] = (session.results.errorTypes[errorType] || 0) + 1;
+            results.errorTypes[errorType] = (results.errorTypes[errorType] || 0) + 1;
 
             return { success: false, responseTime, error: errorType };
         }
     }
 
-    // Function to simulate a user
-    async function simulateUser(userId) {
+    // Function to simulate a user for a specific runtime
+    async function simulateUser(runtime, baseUrl, userId) {
         while (Date.now() < endTime && session.status === 'running') {
             // Pick random endpoint
             const endpoint = endpoints[Math.floor(Math.random() * endpoints.length)];
             
-            await makeRequest(endpoint);
+            await makeRequest(runtime, baseUrl, endpoint);
             
             // Random delay between requests (100ms to 2s)
             const delay = Math.random() * 1900 + 100;
@@ -286,38 +309,80 @@ async function runLoadTest(sessionId, targetUrl, config) {
         }
     }
 
-    // Start users with ramp-up
+    // Start users with ramp-up for both runtimes
     const userPromises = [];
-    for (let i = 0; i < users; i++) {
+    
+    // Node.js users
+    for (let i = 0; i < usersPerRuntime; i++) {
         setTimeout(() => {
             if (session.status === 'running') {
-                userPromises.push(simulateUser(i));
+                userPromises.push(simulateUser('node', nodeUrl, `node_${i}`));
+            }
+        }, i * rampUpInterval);
+    }
+    
+    // Bun users
+    for (let i = 0; i < usersPerRuntime; i++) {
+        setTimeout(() => {
+            if (session.status === 'running') {
+                userPromises.push(simulateUser('bun', bunUrl, `bun_${i}`));
             }
         }, i * rampUpInterval);
     }
 
-    // Monitor progress
+    // Monitor progress and calculate comparison
     const progressInterval = setInterval(() => {
         const elapsed = Date.now() - startTime;
         const progress = Math.min((elapsed / (duration * 1000)) * 100, 100);
         session.progress = progress;
 
-        // Calculate stats
-        const avgResponseTime = session.results.totalTime / Math.max(session.results.responses, 1);
-        const errorRate = (session.results.errors / Math.max(session.results.requests, 1)) * 100;
-        const rps = session.results.responses / Math.max(elapsed / 1000, 1);
+        // Calculate stats for both runtimes
+        const nodeResults = session.results.node;
+        const bunResults = session.results.bun;
+
+        const nodeAvgResponseTime = nodeResults.totalTime / Math.max(nodeResults.responses, 1);
+        const bunAvgResponseTime = bunResults.totalTime / Math.max(bunResults.responses, 1);
+        
+        const nodeErrorRate = (nodeResults.errors / Math.max(nodeResults.requests, 1)) * 100;
+        const bunErrorRate = (bunResults.errors / Math.max(bunResults.requests, 1)) * 100;
+        
+        const nodeRps = nodeResults.responses / Math.max(elapsed / 1000, 1);
+        const bunRps = bunResults.responses / Math.max(elapsed / 1000, 1);
+
+        // Determine current leader
+        let currentWinner = 'tie';
+        if (nodeAvgResponseTime < bunAvgResponseTime && nodeErrorRate <= bunErrorRate) {
+            currentWinner = 'node';
+        } else if (bunAvgResponseTime < nodeAvgResponseTime && bunErrorRate <= nodeErrorRate) {
+            currentWinner = 'bun';
+        } else if (nodeRps > bunRps) {
+            currentWinner = 'node';
+        } else if (bunRps > nodeRps) {
+            currentWinner = 'bun';
+        }
 
         broadcast({
             type: 'progress',
             sessionId,
             progress,
-            stats: {
-                requests: session.results.requests,
-                responses: session.results.responses,
-                errors: session.results.errors,
-                avgResponseTime: Math.round(avgResponseTime),
-                errorRate: Math.round(errorRate * 100) / 100,
-                rps: Math.round(rps * 100) / 100,
+            comparison: {
+                node: {
+                    requests: nodeResults.requests,
+                    responses: nodeResults.responses,
+                    errors: nodeResults.errors,
+                    avgResponseTime: Math.round(nodeAvgResponseTime),
+                    errorRate: Math.round(nodeErrorRate * 100) / 100,
+                    rps: Math.round(nodeRps * 100) / 100
+                },
+                bun: {
+                    requests: bunResults.requests,
+                    responses: bunResults.responses,
+                    errors: bunResults.errors,
+                    avgResponseTime: Math.round(bunAvgResponseTime),
+                    errorRate: Math.round(bunErrorRate * 100) / 100,
+                    rps: Math.round(bunRps * 100) / 100
+                },
+                winner: currentWinner,
                 elapsed: Math.round(elapsed / 1000)
             }
         });
@@ -332,41 +397,102 @@ async function runLoadTest(sessionId, targetUrl, config) {
         session.status = 'completed';
         session.endTime = new Date();
         
-        // Calculate final statistics
-        const totalRequests = session.results.requests;
-        const totalResponses = session.results.responses;
-        const totalErrors = session.results.errors;
-        const avgResponseTime = session.results.totalTime / Math.max(totalResponses, 1);
-        const errorRate = (totalErrors / Math.max(totalRequests, 1)) * 100;
         const actualDuration = (session.endTime - session.startTime) / 1000;
-        const rps = totalResponses / actualDuration;
 
-        // Calculate percentiles
-        const sortedTimes = session.results.responseTimes.sort((a, b) => a - b);
-        const p50 = sortedTimes[Math.floor(sortedTimes.length * 0.5)] || 0;
-        const p95 = sortedTimes[Math.floor(sortedTimes.length * 0.95)] || 0;
-        const p99 = sortedTimes[Math.floor(sortedTimes.length * 0.99)] || 0;
+        // Calculate final statistics for both runtimes
+        function calculateStats(results) {
+            const totalRequests = results.requests;
+            const totalResponses = results.responses;
+            const totalErrors = results.errors;
+            const avgResponseTime = results.totalTime / Math.max(totalResponses, 1);
+            const errorRate = (totalErrors / Math.max(totalRequests, 1)) * 100;
+            const rps = totalResponses / actualDuration;
+
+            // Calculate percentiles
+            const sortedTimes = results.responseTimes.sort((a, b) => a - b);
+            const p50 = sortedTimes[Math.floor(sortedTimes.length * 0.5)] || 0;
+            const p95 = sortedTimes[Math.floor(sortedTimes.length * 0.95)] || 0;
+            const p99 = sortedTimes[Math.floor(sortedTimes.length * 0.99)] || 0;
+
+            return {
+                totalRequests,
+                totalResponses,
+                totalErrors,
+                avgResponseTime: Math.round(avgResponseTime),
+                errorRate: Math.round(errorRate * 100) / 100,
+                rps: Math.round(rps * 100) / 100,
+                percentiles: { p50, p95, p99 },
+                errorTypes: results.errorTypes
+            };
+        }
+
+        const nodeStats = calculateStats(session.results.node);
+        const bunStats = calculateStats(session.results.bun);
+
+        // Determine overall winner with detailed comparison
+        let winner = 'tie';
+        let nodeAdvantages = [];
+        let bunAdvantages = [];
+
+        if (nodeStats.avgResponseTime < bunStats.avgResponseTime) {
+            nodeAdvantages.push('faster_response_time');
+        } else if (bunStats.avgResponseTime < nodeStats.avgResponseTime) {
+            bunAdvantages.push('faster_response_time');
+        }
+
+        if (nodeStats.rps > bunStats.rps) {
+            nodeAdvantages.push('higher_throughput');
+        } else if (bunStats.rps > nodeStats.rps) {
+            bunAdvantages.push('higher_throughput');
+        }
+
+        if (nodeStats.errorRate < bunStats.errorRate) {
+            nodeAdvantages.push('lower_error_rate');
+        } else if (bunStats.errorRate < nodeStats.errorRate) {
+            bunAdvantages.push('lower_error_rate');
+        }
+
+        if (nodeStats.percentiles.p95 < bunStats.percentiles.p95) {
+            nodeAdvantages.push('better_p95_latency');
+        } else if (bunStats.percentiles.p95 < nodeStats.percentiles.p95) {
+            bunAdvantages.push('better_p95_latency');
+        }
+
+        // Determine winner based on advantages
+        if (nodeAdvantages.length > bunAdvantages.length) {
+            winner = 'node';
+        } else if (bunAdvantages.length > nodeAdvantages.length) {
+            winner = 'bun';
+        }
+
+        session.comparison = {
+            winner,
+            nodeAdvantages,
+            bunAdvantages,
+            performanceGap: {
+                responseTime: Math.abs(nodeStats.avgResponseTime - bunStats.avgResponseTime),
+                throughput: Math.abs(nodeStats.rps - bunStats.rps),
+                errorRate: Math.abs(nodeStats.errorRate - bunStats.errorRate)
+            }
+        };
 
         session.finalStats = {
-            totalRequests,
-            totalResponses,
-            totalErrors,
-            avgResponseTime: Math.round(avgResponseTime),
-            errorRate: Math.round(errorRate * 100) / 100,
-            rps: Math.round(rps * 100) / 100,
             duration: Math.round(actualDuration),
-            percentiles: { p50, p95, p99 },
-            errorTypes: session.results.errorTypes
+            node: nodeStats,
+            bun: bunStats
         };
 
         broadcast({
             type: 'completed',
             sessionId,
             session,
+            comparison: session.comparison,
             stats: session.finalStats
         });
 
-        console.log(`Load test ${sessionId} completed:`, session.finalStats);
+        console.log(`Comparison test ${sessionId} completed. Winner: ${winner}`);
+        console.log('Node.js stats:', nodeStats);
+        console.log('Bun stats:', bunStats);
     }, duration * 1000);
 }
 

@@ -734,6 +734,57 @@
                     case 'sessionStopped':
                         this.showResults(data);
                         break;
+                    case 'ohaTestStart':
+                        this.logOhaMessage(data.runtime, data.message, 'start');
+                        break;
+                    case 'ohaProgress':
+                        this.logOhaMessage(data.runtime, data.message, 'progress');
+                        this.updateOhaStats(data.runtime, data.stats);
+                        break;
+                    case 'ohaCompleted':
+                        this.logOhaMessage(data.runtime, data.message, 'completed');
+                        break;
+                    case 'ohaError':
+                        this.logOhaMessage(data.runtime, data.message, 'error');
+                        break;
+                }
+            }
+
+            logOhaMessage(runtime, message, type) {
+                const log = document.getElementById('liveLog');
+                const timestamp = new Date().toLocaleTimeString();
+                const runtimeLabel = runtime === 'node' ? '🟢 Node.js' : '🟠 Bun';
+                const typeIcon = {
+                    start: '🚀',
+                    progress: '⚡',
+                    completed: '✅',
+                    error: '❌'
+                }[type] || '📊';
+                
+                log.innerHTML += `[${timestamp}] ${typeIcon} ${runtimeLabel}: ${message}\n`;
+                log.scrollTop = log.scrollHeight;
+            }
+
+            updateOhaStats(runtime, stats) {
+                // Real-time stats update from oha output
+                if (runtime === 'node') {
+                    document.getElementById('nodeRequests').textContent = stats.requests.toLocaleString();
+                    document.getElementById('nodeResponses').textContent = stats.responses.toLocaleString();
+                    document.getElementById('nodeErrors').textContent = stats.errors.toLocaleString();
+                    document.getElementById('nodeAvgTime').textContent = `${Math.round(stats.avgResponseTime)}ms`;
+                    document.getElementById('nodeRps').textContent = stats.requestsPerSecond.toFixed(1);
+                    
+                    const errorRate = ((stats.errors / Math.max(stats.requests, 1)) * 100).toFixed(2);
+                    document.getElementById('nodeErrorRate').textContent = `${errorRate}%`;
+                } else if (runtime === 'bun') {
+                    document.getElementById('bunRequests').textContent = stats.requests.toLocaleString();
+                    document.getElementById('bunResponses').textContent = stats.responses.toLocaleString();
+                    document.getElementById('bunErrors').textContent = stats.errors.toLocaleString();
+                    document.getElementById('bunAvgTime').textContent = `${Math.round(stats.avgResponseTime)}ms`;
+                    document.getElementById('bunRps').textContent = stats.requestsPerSecond.toFixed(1);
+                    
+                    const errorRate = ((stats.errors / Math.max(stats.requests, 1)) * 100).toFixed(2);
+                    document.getElementById('bunErrorRate').textContent = `${errorRate}%`;
                 }
             }
 

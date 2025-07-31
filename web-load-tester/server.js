@@ -285,7 +285,6 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         '-z', `${Math.min(duration, 120)}s`,  // Allow longer duration for real tests
         '-c', Math.min(users, 100).toString(), // Allow more concurrent connections
         '-q', Math.floor(users * 2).toString(),
-        '--no-tui',  // Disable TUI mode for programmatic output
         testUrl
     ];
     
@@ -304,7 +303,13 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
     return new Promise((resolve, reject) => {
         const oha = spawn('oha', args, {
             stdio: ['ignore', 'pipe', 'pipe'],
-            shell: false
+            shell: false,
+            env: { 
+                ...process.env, 
+                TERM: 'xterm-256color',  // Set terminal type for oha TUI
+                COLUMNS: '80',           // Set terminal width
+                LINES: '24'              // Set terminal height
+            }
         });
         
         let jsonOutput = '';
@@ -348,14 +353,20 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         
         console.log(`[${runtime}] oha process spawned with PID:`, oha.pid);
         
-        // Stream stdout (text output from oha)
+        // Function to strip ANSI escape sequences
+        const stripAnsi = (str) => {
+            return str.replace(/\x1b\[[0-9;]*[mGKH]/g, '').replace(/\x1b\[2J/g, '').replace(/\x1b\[\?25[lh]/g, '');
+        };
+
+        // Stream stdout (text output from oha with TUI)
         oha.stdout.on('data', (data) => {
             const chunk = data.toString();
-            jsonOutput += chunk;
-            console.log(`[${runtime}] stdout:`, chunk.trim());
+            const cleanChunk = stripAnsi(chunk);
+            jsonOutput += cleanChunk;
+            console.log(`[${runtime}] stdout:`, cleanChunk.trim());
             
-            // Broadcast raw stdout lines
-            const lines = chunk.split('\n').filter(line => line.trim());
+            // Broadcast cleaned stdout lines
+            const lines = cleanChunk.split('\n').filter(line => line.trim());
             for (const line of lines) {
                 broadcast({
                     type: 'ohaRawOutput',
@@ -364,21 +375,39 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                     message: line.trim(),
                     rawOutput: line.trim()
                 });
+                
+                // Try to parse real-time progress from TUI output
+                const progressLine = line.trim();
+                if (progressLine.includes('Requests') && progressLine.includes('req/s')) {
+                    // Example: "Requests      : 1234"
+                    const reqMatch = progressLine.match(/Requests\s*:\s*(\d+)/i);
+                    if (reqMatch) {
+                        currentStats.requests = parseInt(reqMatch[1]);
+                    }
+                }
+                if (progressLine.includes('Fastest') || progressLine.includes('Average') || progressLine.includes('Slowest')) {
+                    // Example: "Average: 0.0123 secs"
+                    const avgMatch = progressLine.match(/Average[:\s]+([\d.]+)\s*secs?/i);
+                    if (avgMatch) {
+                        currentStats.avgResponseTime = parseFloat(avgMatch[1]) * 1000;
+                    }
+                }
             }
         });
         
         // Stream stderr (any error output)
         oha.stderr.on('data', (data) => {
             const chunk = data.toString();
-            errorOutput += chunk;
-            console.log(`[${runtime}] stderr:`, chunk.trim());
+            const cleanChunk = stripAnsi(chunk);
+            errorOutput += cleanChunk;
+            console.log(`[${runtime}] stderr:`, cleanChunk.trim());
             
             if (!hasStarted) {
                 hasStarted = true;
             }
             
-            // Broadcast stderr output (warnings, errors, etc.)
-            const lines = chunk.split('\n').filter(line => line.trim());
+            // Broadcast cleaned stderr output (warnings, errors, etc.)
+            const lines = cleanChunk.split('\n').filter(line => line.trim());
             for (const line of lines) {
                 broadcast({
                     type: 'ohaRawOutput',

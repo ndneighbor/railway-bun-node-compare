@@ -235,41 +235,57 @@ export class PerformanceHandler {
         return new Promise(async (resolve, reject) => {
             const { spawn } = await import('child_process');
             
-            // oha command with text output
+            // oha command with TUI output (we'll strip ANSI codes)
             const args = [
                 '-z', `${config.duration}s`,  // Duration
                 '-c', config.users.toString(), // Concurrent connections
-                '--no-tui',                     // No TUI for programmatic usage
                 url
             ];
 
-            const oha = spawn('oha', args);
+            const oha = spawn('oha', args, {
+                env: { 
+                    ...process.env, 
+                    TERM: 'xterm-256color',
+                    COLUMNS: '80',
+                    LINES: '24'
+                }
+            });
             let output = '';
             let errorOutput = '';
 
+            // Function to strip ANSI escape sequences
+            const stripAnsi = (str) => {
+                return str.replace(/\x1b\[[0-9;]*[mGKH]/g, '').replace(/\x1b\[2J/g, '').replace(/\x1b\[\?25[lh]/g, '');
+            };
+
             oha.stdout.on('data', (data) => {
                 const chunk = data.toString();
-                output += chunk;
+                const cleanChunk = stripAnsi(chunk);
+                output += cleanChunk;
                 
-                // Try to parse and broadcast incremental updates if possible
-                // oha outputs progress to stderr usually
-                broadcast({
-                    status: 'progress',
-                    message: 'Test running...',
-                    rawOutput: chunk.trim()
-                });
+                // Broadcast cleaned incremental updates
+                const lines = cleanChunk.split('\n').filter(line => line.trim());
+                for (const line of lines) {
+                    broadcast({
+                        status: 'progress',
+                        message: line.trim(),
+                        rawOutput: line.trim()
+                    });
+                }
             });
 
             oha.stderr.on('data', (data) => {
                 const chunk = data.toString();
-                errorOutput += chunk;
+                const cleanChunk = stripAnsi(chunk);
+                errorOutput += cleanChunk;
                 
-                // Parse progress information from stderr
-                if (chunk.includes('req/s') || chunk.includes('%')) {
+                // Parse progress information from cleaned stderr
+                const lines = cleanChunk.split('\n').filter(line => line.trim());
+                for (const line of lines) {
                     broadcast({
                         status: 'progress', 
-                        message: chunk.trim(),
-                        rawOutput: chunk.trim()
+                        message: line.trim(),
+                        rawOutput: line.trim()
                     });
                 }
             });

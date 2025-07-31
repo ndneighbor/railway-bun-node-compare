@@ -2,8 +2,8 @@ FROM ubuntu:22.04
 
 WORKDIR /app
 
-# Install curl and bash for Bun installation
-RUN apt-get update && apt-get install -y curl bash && rm -rf /var/lib/apt/lists/*
+# Install curl, bash, and unzip for Bun installation
+RUN apt-get update && apt-get install -y curl bash unzip && rm -rf /var/lib/apt/lists/*
 
 # Install Bun using the official install script (includes SIMD optimizations)
 RUN curl https://bun.sh/install | bash

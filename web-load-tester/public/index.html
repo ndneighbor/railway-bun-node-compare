@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookstore Load Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+        }
+
+        .btn-danger:hover {
+            box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4);
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .config-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .config-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .config-card.selected {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .config-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .config-card .stats {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .progress-section {
+            display: none;
+        }
+
+        .progress-section.active {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .log {
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 14px;
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .results-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .results-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .error-list {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .error-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .error-item:last-child {
+            border-bottom: none;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            border-radius: 20px;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .connection-status.connected {
+            background: #28a745;
+        }
+
+        .connection-status.disconnected {
+            background: #dc3545;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .config-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">Connecting...</div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Bookstore Load Tester</h1>
+            <p>Performance testing for Node.js vs Bun comparison</p>
+        </div>
+
+        <!-- Configuration Section -->
+        <div class="card" id="configSection">
+            <h2>Load Test Configuration</h2>
+            
+            <div class="form-group">
+                <label for="targetUrl">Target URL:</label>
+                <input type="url" id="targetUrl" placeholder="https://your-bookstore-api.railway.app" required>
+            </div>
+
+            <div class="form-group">
+                <label>Select Test Configuration:</label>
+                <div class="config-grid" id="configGrid">
+                    <!-- Configurations will be loaded here -->
+                </div>
+            </div>
+
+            <div class="form-group">
+                <button class="btn" id="startTestBtn">Start Load Test</button>
+            </div>
+        </div>
+
+        <!-- Progress Section -->
+        <div class="card progress-section" id="progressSection">
+            <h2>Test Progress</h2>
+            
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-value" id="requestsCount">0</div>
+                    <div class="stat-label">Requests</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="responsesCount">0</div>
+                    <div class="stat-label">Responses</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="errorsCount">0</div>
+                    <div class="stat-label">Errors</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avgResponseTime">0ms</div>
+                    <div class="stat-label">Avg Response Time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="errorRate">0%</div>
+                    <div class="stat-label">Error Rate</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="rps">0</div>
+                    <div class="stat-label">Requests/sec</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <button class="btn btn-danger" id="stopTestBtn">Stop Test</button>
+            </div>
+
+            <div class="form-group">
+                <h3>Live Log</h3>
+                <div class="log" id="liveLog"></div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card results-section" id="resultsSection">
+            <h2>Test Results</h2>
+            
+            <div class="results-grid">
+                <div class="results-card">
+                    <h3>Summary</h3>
+                    <div id="resultsSummary"></div>
+                </div>
+                
+                <div class="results-card">
+                    <h3>Response Time Percentiles</h3>
+                    <div id="percentilesData"></div>
+                </div>
+                
+                <div class="results-card">
+                    <h3>Error Breakdown</h3>
+                    <div class="error-list" id="errorBreakdown"></div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <button class="btn" id="exportResultsBtn">Export Results</button>
+                <button class="btn" id="newTestBtn">Start New Test</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class LoadTester {
+            constructor() {
+                this.ws = null;
+                this.currentSessionId = null;
+                this.selectedConfig = null;
+                this.configurations = {};
+                
+                this.initializeWebSocket();
+                this.loadConfigurations();
+                this.bindEvents();
+            }
+
+            initializeWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.updateConnectionStatus(true);
+                };
+                
+                this.ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    this.updateConnectionStatus(false);
+                    
+                    // Attempt to reconnect after 3 seconds
+                    setTimeout(() => this.initializeWebSocket(), 3000);
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    this.handleWebSocketMessage(data);
+                };
+            }
+
+            updateConnectionStatus(connected) {
+                const status = document.getElementById('connectionStatus');
+                status.textContent = connected ? 'Connected' : 'Disconnected';
+                status.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
+            }
+
+            async loadConfigurations() {
+                try {
+                    const response = await fetch('/api/configurations');
+                    this.configurations = await response.json();
+                    this.renderConfigurations();
+                } catch (error) {
+                    console.error('Failed to load configurations:', error);
+                }
+            }
+
+            renderConfigurations() {
+                const grid = document.getElementById('configGrid');
+                grid.innerHTML = '';
+
+                Object.entries(this.configurations).forEach(([key, config]) => {
+                    const card = document.createElement('div');
+                    card.className = 'config-card';
+                    card.dataset.config = key;
+                    
+                    card.innerHTML = `
+                        <h3>${config.name}</h3>
+                        <div class="stats">
+                            <div>${config.users} users</div>
+                            <div>${config.duration}s duration</div>
+                            <div>${config.endpoints.length} endpoints</div>
+                        </div>
+                    `;
+                    
+                    card.addEventListener('click', () => this.selectConfiguration(key, card));
+                    grid.appendChild(card);
+                });
+
+                // Select first configuration by default
+                if (Object.keys(this.configurations).length > 0) {
+                    const firstKey = Object.keys(this.configurations)[0];
+                    const firstCard = grid.querySelector(`[data-config="${firstKey}"]`);
+                    this.selectConfiguration(firstKey, firstCard);
+                }
+            }
+
+            selectConfiguration(key, cardElement) {
+                // Remove previous selection
+                document.querySelectorAll('.config-card').forEach(card => {
+                    card.classList.remove('selected');
+                });
+                
+                // Select new configuration
+                cardElement.classList.add('selected');
+                this.selectedConfig = key;
+            }
+
+            bindEvents() {
+                document.getElementById('startTestBtn').addEventListener('click', () => this.startTest());
+                document.getElementById('stopTestBtn').addEventListener('click', () => this.stopTest());
+                document.getElementById('exportResultsBtn').addEventListener('click', () => this.exportResults());
+                document.getElementById('newTestBtn').addEventListener('click', () => this.startNewTest());
+            }
+
+            async startTest() {
+                const targetUrl = document.getElementById('targetUrl').value.trim();
+                
+                if (!targetUrl) {
+                    alert('Please enter a target URL');
+                    return;
+                }
+                
+                if (!this.selectedConfig) {
+                    alert('Please select a test configuration');
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/api/test/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            targetUrl: targetUrl,
+                            configName: this.selectedConfig
+                        })
+                    });
+
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        this.currentSessionId = result.sessionId;
+                        this.showProgressSection();
+                        this.logMessage(`Test started: ${result.sessionId}`);
+                    } else {
+                        alert(`Error: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to start test:', error);
+                    alert('Failed to start test');
+                }
+            }
+
+            async stopTest() {
+                if (!this.currentSessionId) return;
+
+                try {
+                    const response = await fetch(`/api/test/stop/${this.currentSessionId}`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        this.logMessage('Test stopped by user');
+                    }
+                } catch (error) {
+                    console.error('Failed to stop test:', error);
+                }
+            }
+
+            handleWebSocketMessage(data) {
+                switch (data.type) {
+                    case 'progress':
+                        this.updateProgress(data);
+                        break;
+                    case 'completed':
+                        this.showResults(data);
+                        break;
+                    case 'sessionStopped':
+                        this.showResults(data);
+                        break;
+                }
+            }
+
+            updateProgress(data) {
+                const { progress, stats } = data;
+                
+                // Update progress bar
+                document.getElementById('progressFill').style.width = `${progress}%`;
+                
+                // Update stats
+                document.getElementById('requestsCount').textContent = stats.requests.toLocaleString();
+                document.getElementById('responsesCount').textContent = stats.responses.toLocaleString();
+                document.getElementById('errorsCount').textContent = stats.errors.toLocaleString();
+                document.getElementById('avgResponseTime').textContent = `${stats.avgResponseTime}ms`;
+                document.getElementById('errorRate').textContent = `${stats.errorRate}%`;
+                document.getElementById('rps').textContent = stats.rps.toFixed(1);
+                
+                // Log progress
+                this.logMessage(`Progress: ${progress.toFixed(1)}% - RPS: ${stats.rps.toFixed(1)} - Avg: ${stats.avgResponseTime}ms`);
+            }
+
+            showResults(data) {
+                const { session } = data;
+                const stats = session.finalStats;
+                
+                // Hide progress, show results
+                document.getElementById('progressSection').classList.remove('active');
+                document.getElementById('resultsSection').classList.add('active');
+                
+                // Summary
+                const summary = document.getElementById('resultsSummary');
+                summary.innerHTML = `
+                    <div><strong>Duration:</strong> ${stats.duration}s</div>
+                    <div><strong>Total Requests:</strong> ${stats.totalRequests.toLocaleString()}</div>
+                    <div><strong>Successful:</strong> ${stats.totalResponses.toLocaleString()}</div>
+                    <div><strong>Failed:</strong> ${stats.totalErrors.toLocaleString()}</div>
+                    <div><strong>Success Rate:</strong> ${(100 - stats.errorRate).toFixed(2)}%</div>
+                    <div><strong>Avg Response Time:</strong> ${stats.avgResponseTime}ms</div>
+                    <div><strong>Requests/sec:</strong> ${stats.rps}</div>
+                `;
+                
+                // Percentiles
+                const percentiles = document.getElementById('percentilesData');
+                percentiles.innerHTML = `
+                    <div><strong>50th percentile:</strong> ${stats.percentiles.p50}ms</div>
+                    <div><strong>95th percentile:</strong> ${stats.percentiles.p95}ms</div>
+                    <div><strong>99th percentile:</strong> ${stats.percentiles.p99}ms</div>
+                `;
+                
+                // Error breakdown
+                const errorBreakdown = document.getElementById('errorBreakdown');
+                errorBreakdown.innerHTML = '';
+                
+                if (Object.keys(stats.errorTypes).length > 0) {
+                    Object.entries(stats.errorTypes).forEach(([error, count]) => {
+                        const errorItem = document.createElement('div');
+                        errorItem.className = 'error-item';
+                        errorItem.innerHTML = `
+                            <span>${error}</span>
+                            <span>${count}</span>
+                        `;
+                        errorBreakdown.appendChild(errorItem);
+                    });
+                } else {
+                    errorBreakdown.innerHTML = '<div>No errors occurred</div>';
+                }
+                
+                this.logMessage('Test completed successfully!');
+            }
+
+            showProgressSection() {
+                document.getElementById('configSection').style.display = 'none';
+                document.getElementById('progressSection').classList.add('active');
+                
+                // Reset progress
+                document.getElementById('progressFill').style.width = '0%';
+                document.getElementById('liveLog').innerHTML = '';
+            }
+
+            logMessage(message) {
+                const log = document.getElementById('liveLog');
+                const timestamp = new Date().toLocaleTimeString();
+                log.innerHTML += `[${timestamp}] ${message}\n`;
+                log.scrollTop = log.scrollHeight;
+            }
+
+            exportResults() {
+                // Create downloadable JSON file with results
+                const data = {
+                    sessionId: this.currentSessionId,
+                    timestamp: new Date().toISOString(),
+                    results: 'Results would be exported here'
+                };
+                
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `load-test-results-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            startNewTest() {
+                // Reset UI
+                document.getElementById('configSection').style.display = 'block';
+                document.getElementById('progressSection').classList.remove('active');
+                document.getElementById('resultsSection').classList.remove('active');
+                
+                this.currentSessionId = null;
+            }
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            new LoadTester();
+        });
+    </script>
+</body>
+</html>

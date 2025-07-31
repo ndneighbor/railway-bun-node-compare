@@ -5,7 +5,7 @@ export async function runMigrations() {
     try {
         console.log('Running database migrations...');
         
-        // Use postgres.js sql.file() - works with both Bun and Node.js
+        // Use sql.file() - works with both Bun.sql and postgres.js
         const schemaPath = join(import.meta.dir, 'schema.sql');
         await db.sql.file(schemaPath);
         console.log('✅ Database schema created successfully');

@@ -5,7 +5,7 @@ export async function seedDatabase() {
     try {
         console.log('Seeding database with sample data...');
         
-        // Use postgres.js sql.file() - works with both Bun and Node.js
+        // Use sql.file() - works with both Bun.sql and postgres.js
         const seedsPath = join(import.meta.dir, 'seeds.sql');
         await db.sql.file(seedsPath);
         console.log('✅ Database seeded successfully');

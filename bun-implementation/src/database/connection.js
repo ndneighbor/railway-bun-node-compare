@@ -1,5 +1,4 @@
-// Simple approach: use postgres.js with potential Bun.sql in the future
-import postgres from 'postgres';
+import { sql } from 'bun';
 
 class Database {
     constructor() {
@@ -9,26 +8,19 @@ class Database {
             throw new Error('DATABASE_URL environment variable is required');
         }
 
-        // For now, use postgres.js - we can migrate to Bun.sql later when it's stable
-        this.sql = postgres(databaseUrl, {
+        // Use Bun's built-in SQL template literal function
+        this.sql = sql.connect(databaseUrl, {
             ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
             max: 20,
-            idle_timeout: 20000,
-            connect_timeout: 10000,
-            connection: {
-                application_name: 'bookstore-bun',
-            },
-            transform: {
-                undefined: null
-            },
-            onnotice: () => {},
-            debug: process.env.NODE_ENV === 'development'
+            idleTimeout: 20000,
+            connectTimeout: 10000,
+            applicationName: 'bookstore-bun'
         });
     }
 
     async transaction(callback) {
-        return await this.sql.begin(async (sql) => {
-            return await callback(sql);
+        return await this.sql.begin(async (tx) => {
+            return await callback(tx);
         });
     }
 

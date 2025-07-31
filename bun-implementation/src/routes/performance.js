@@ -125,11 +125,11 @@ export class PerformanceHandler {
         }
     }
 
-    // POST /api/performance/benchmark - Trigger load test scenarios
+    // POST /api/performance/benchmark - Trigger load test scenarios with oha
     async benchmark(request) {
         try {
             const body = await request.json();
-            const { scenario = 'light', duration = 60 } = body;
+            const { scenario = 'light', duration = 60, wsId } = body;
             
             const scenarios = {
                 startup: { users: 1, duration: 10, endpoints: ['/api/health'] },
@@ -148,15 +148,7 @@ export class PerformanceHandler {
 
             const config = scenarios[scenario];
             const startTime = new Date();
-
-            // Simulate load testing (in a real implementation, this would use a proper load testing tool)
-            const benchmarkResults = {
-                scenario,
-                config,
-                startTime,
-                status: 'running',
-                id: `benchmark_${Date.now()}`
-            };
+            const benchmarkId = `benchmark_${Date.now()}`;
 
             // Store benchmark start
             await db.sql`
@@ -164,16 +156,170 @@ export class PerformanceHandler {
                 VALUES (${process.env.RUNTIME_NAME || 'bun'}, ${`/benchmark/${scenario}`}, ${0}, ${process.memoryUsage().heapUsed / 1024 / 1024})
             `;
 
-            // In a real implementation, you would start the actual load test here
-            // For this demo, we'll return the configuration and suggest using external tools
+            // Start the oha benchmark asynchronously
+            this.runOhaBenchmark(config, benchmarkId, wsId);
+
             return Response.json({
-                ...benchmarkResults,
-                message: 'Benchmark initiated. Use external load testing tools like wrk, artillery, or k6 for actual load testing.',
-                suggested_command: `wrk -t${config.users} -c${config.users} -d${config.duration}s --timeout 10s http://localhost:${process.env.PORT || 3000}${config.endpoints[0]}`
+                scenario,
+                config,
+                startTime,
+                status: 'running',
+                id: benchmarkId,
+                message: 'Benchmark started with oha, check WebSocket connection for real-time updates'
             });
         } catch (error) {
             return Response.json({ error: error.message }, { status: 500 });
         }
+    }
+
+    // Run oha benchmark with streaming output
+    async runOhaBenchmark(config, benchmarkId, wsId) {
+        const { spawn } = await import('child_process');
+        const port = process.env.PORT || 3000;
+        
+        // Broadcast to all WebSocket connections (or specific wsId if provided)
+        const broadcast = (message) => {
+            const data = JSON.stringify({
+                type: 'benchmark',
+                benchmarkId,
+                timestamp: new Date().toISOString(),
+                ...message
+            });
+            
+            // Get WebSocket connections from the server context
+            // This will need to be passed from the server or accessed via a global
+            if (global.wsConnections) {
+                for (const ws of global.wsConnections) {
+                    try {
+                        ws.send(data);
+                    } catch (error) {
+                        console.error('Error sending WebSocket message:', error);
+                    }
+                }
+            }
+        };
+
+        // Run oha command for each endpoint
+        for (let i = 0; i < config.endpoints.length; i++) {
+            const endpoint = config.endpoints[i];
+            const url = `http://localhost:${port}${endpoint}`;
+            
+            broadcast({
+                status: 'running',
+                message: `Starting load test for ${endpoint} (${i + 1}/${config.endpoints.length})`,
+                endpoint,
+                progress: (i / config.endpoints.length) * 100
+            });
+
+            try {
+                await this.runSingleOhaTest(url, config, broadcast);
+            } catch (error) {
+                broadcast({
+                    status: 'error',
+                    message: `Failed to test ${endpoint}: ${error.message}`,
+                    endpoint,
+                    error: error.message
+                });
+            }
+        }
+
+        broadcast({
+            status: 'completed',
+            message: 'All benchmark tests completed',
+            progress: 100
+        });
+    }
+
+    // Run a single oha test
+    async runSingleOhaTest(url, config, broadcast) {
+        return new Promise(async (resolve, reject) => {
+            const { spawn } = await import('child_process');
+            
+            // oha command with JSON output for easier parsing
+            const args = [
+                '-z', `${config.duration}s`,  // Duration
+                '-c', config.users.toString(), // Concurrent connections
+                '--json',                       // JSON output
+                url
+            ];
+
+            const oha = spawn('oha', args);
+            let output = '';
+            let errorOutput = '';
+
+            oha.stdout.on('data', (data) => {
+                const chunk = data.toString();
+                output += chunk;
+                
+                // Try to parse and broadcast incremental updates if possible
+                // oha outputs progress to stderr usually
+                broadcast({
+                    status: 'progress',
+                    message: 'Test running...',
+                    rawOutput: chunk.trim()
+                });
+            });
+
+            oha.stderr.on('data', (data) => {
+                const chunk = data.toString();
+                errorOutput += chunk;
+                
+                // Parse progress information from stderr
+                if (chunk.includes('req/s') || chunk.includes('%')) {
+                    broadcast({
+                        status: 'progress', 
+                        message: chunk.trim(),
+                        rawOutput: chunk.trim()
+                    });
+                }
+            });
+
+            oha.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        // Parse JSON output from oha
+                        const result = JSON.parse(output);
+                        broadcast({
+                            status: 'endpoint_completed',
+                            message: `Completed test for ${url}`,
+                            result: {
+                                url,
+                                summary: result.summary,
+                                latency: result.latency,
+                                requests: result.requests
+                            }
+                        });
+                        resolve(result);
+                    } catch (parseError) {
+                        broadcast({
+                            status: 'parse_error',
+                            message: `Failed to parse results for ${url}`,
+                            rawOutput: output,
+                            error: parseError.message
+                        });
+                        resolve({ error: parseError.message, rawOutput: output });
+                    }
+                } else {
+                    const error = new Error(`oha process exited with code ${code}: ${errorOutput}`);
+                    broadcast({
+                        status: 'error',
+                        message: `oha failed for ${url}`,
+                        error: error.message,
+                        exitCode: code
+                    });
+                    reject(error);
+                }
+            });
+
+            oha.on('error', (error) => {
+                broadcast({
+                    status: 'error',
+                    message: `Failed to start oha: ${error.message}. Please ensure oha is installed.`,
+                    error: error.message
+                });
+                reject(error);
+            });
+        });
     }
 
     // GET /api/performance/endpoints - Get endpoint performance stats

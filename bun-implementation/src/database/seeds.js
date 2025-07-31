@@ -1,13 +1,17 @@
 import { join } from 'path';
+import { readFileSync } from 'fs';
 import db from './connection.js';
 
 export async function seedDatabase() {
     try {
         console.log('Seeding database with sample data...');
         
-        // Use sql.file() - works with both Bun.sql and postgres.js
+        // Read seeds file and execute SQL
         const seedsPath = join(import.meta.dir, 'seeds.sql');
-        await db.sql.file(seedsPath);
+        const seeds = readFileSync(seedsPath, 'utf8');
+        
+        // Execute the entire seeds file
+        await db.sql.unsafe(seeds);
         console.log('✅ Database seeded successfully');
         
     } catch (error) {

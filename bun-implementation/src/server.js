@@ -17,6 +17,8 @@ const PORT = process.env.PORT || 3000;
 
 // WebSocket connections for real-time metrics
 const wsConnections = new Set();
+// Make WebSocket connections globally accessible for performance streaming
+global.wsConnections = wsConnections;
 
 // Define routes using Bun's native routing
 const routes = {
@@ -48,8 +50,21 @@ const routes = {
             system: '/api/system',
             websocket: '/ws/metrics'
         },
-        documentation: 'Visit /api-docs for detailed API documentation'
+        documentation: 'Visit /api-docs for detailed API documentation',
+        benchmark_ui: 'Visit /benchmark for real-time performance testing UI'
     }),
+
+    "GET /benchmark": () => {
+        try {
+            const htmlPath = join(import.meta.dir, 'public', 'benchmark.html');
+            const html = readFileSync(htmlPath, 'utf8');
+            return new Response(html, {
+                headers: { 'Content-Type': 'text/html' }
+            });
+        } catch (error) {
+            return new Response('Benchmark UI not found', { status: 404 });
+        }
+    },
 
     "GET /api-docs": () => Response.json({
         title: 'Bookstore API Documentation',

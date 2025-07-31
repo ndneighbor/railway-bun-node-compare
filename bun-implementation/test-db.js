@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 // Simple database connection test
-import postgres from 'postgres';
+import { sql } from 'bun';
 
 console.log('🔍 Testing database connection...');
 console.log('Environment variables:');
@@ -14,24 +14,21 @@ if (!process.env.DATABASE_URL) {
 }
 
 try {
-    const sql = postgres(process.env.DATABASE_URL, {
+    const connection = sql.connect(process.env.DATABASE_URL, {
         ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
         max: 1,
-        idle_timeout: 20000,
-        connect_timeout: 10000,
-        connection: {
-            application_name: 'bookstore-bun-test',
-        },
-        debug: true
+        idleTimeout: 20000,
+        connectTimeout: 10000,
+        applicationName: 'bookstore-bun-test'
     });
 
     console.log('💫 Attempting connection...');
-    const result = await sql`SELECT NOW() as current_time, version() as pg_version`;
+    const result = await connection`SELECT NOW() as current_time, version() as pg_version`;
     console.log('✅ Connection successful!');
     console.log('Server time:', result[0].current_time);
     console.log('PostgreSQL version:', result[0].pg_version);
     
-    await sql.end();
+    await connection.end();
     console.log('🔚 Connection closed');
     
 } catch (error) {

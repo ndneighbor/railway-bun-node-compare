@@ -274,7 +274,12 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
     }
     
     // Use first endpoint for focused testing (oha works best with single URL)  
-    const testUrl = url + endpoints[0];
+    // Ensure URL has protocol for oha compatibility
+    let baseUrl = url;
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+        baseUrl = 'https://' + baseUrl;
+    }
+    const testUrl = baseUrl + endpoints[0];
     
     const args = [
         '-z', `${Math.min(duration, 120)}s`,  // Allow longer duration for real tests
@@ -514,6 +519,12 @@ async function runFetchTest(url, runtime, config, sessionId = null) {
     
     console.log(`[${runtime}] Starting fetch-based test as fallback`);
     
+    // Ensure URL has protocol for fetch compatibility
+    let baseUrl = url;
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+        baseUrl = 'https://' + baseUrl;
+    }
+    
     // Broadcast test start
     if (sessionId) {
         broadcast({
@@ -521,7 +532,7 @@ async function runFetchTest(url, runtime, config, sessionId = null) {
             sessionId,
             runtime,
             message: `Starting fetch-based test for ${runtime} (oha fallback)`,
-            url: url + endpoints[0],
+            url: baseUrl + endpoints[0],
             config: { users: Math.min(users, 50), duration: Math.min(duration, 120) }
         });
     }
@@ -575,7 +586,7 @@ async function runFetchTest(url, runtime, config, sessionId = null) {
             (async () => {
                 while (Date.now() < endTime) {
                     const endpoint = endpoints[Math.floor(Math.random() * endpoints.length)];
-                    const testUrl = url + endpoint;
+                    const testUrl = baseUrl + endpoint;
                     const requestStart = Date.now();
                     
                     try {

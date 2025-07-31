@@ -130,6 +130,16 @@ app.get('/api/configurations', (req, res) => {
     res.json(testConfigurations);
 });
 
+// Get environment variables for auto-populating URLs
+app.get('/api/environment', (req, res) => {
+    res.json({
+        nodeUrl: process.env.NODE_PUBLIC_DOMAIN || '',
+        bunUrl: process.env.BUN_PUBLIC_DOMAIN || '',
+        hasNodeUrl: !!process.env.NODE_PUBLIC_DOMAIN,
+        hasBunUrl: !!process.env.BUN_PUBLIC_DOMAIN
+    });
+});
+
 // Get active sessions
 app.get('/api/sessions', (req, res) => {
     const sessions = Array.from(activeSessions.entries()).map(([id, session]) => ({

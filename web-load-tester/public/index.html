@@ -396,12 +396,12 @@
             
             <div class="form-group">
                 <label for="nodeUrl">Node.js Implementation URL:</label>
-                <input type="url" id="nodeUrl" placeholder="https://node-bookstore.railway.app" required>
+                <input type="url" id="nodeUrl" placeholder="Will auto-fill from NODE_PUBLIC_DOMAIN if available" required>
             </div>
 
             <div class="form-group">
                 <label for="bunUrl">Bun Implementation URL:</label>
-                <input type="url" id="bunUrl" placeholder="https://bun-bookstore.railway.app" required>
+                <input type="url" id="bunUrl" placeholder="Will auto-fill from BUN_PUBLIC_DOMAIN if available" required>
             </div>
 
             <div class="form-group">
@@ -573,6 +573,7 @@
                 
                 this.initializeWebSocket();
                 this.loadConfigurations();
+                this.loadEnvironmentUrls();
                 this.bindEvents();
             }
 
@@ -614,6 +615,60 @@
                     this.renderConfigurations();
                 } catch (error) {
                     console.error('Failed to load configurations:', error);
+                }
+            }
+
+            async loadEnvironmentUrls() {
+                try {
+                    const response = await fetch('/api/environment');
+                    const env = await response.json();
+                    
+                    // Auto-populate URL fields if environment variables are available
+                    if (env.hasNodeUrl) {
+                        const nodeUrlField = document.getElementById('nodeUrl');
+                        nodeUrlField.value = env.nodeUrl;
+                        nodeUrlField.style.borderColor = '#28a745'; // Green border to indicate auto-filled
+                        
+                        // Add a small indicator
+                        const indicator = document.createElement('small');
+                        indicator.style.color = '#28a745';
+                        indicator.style.display = 'block';
+                        indicator.textContent = '✅ Auto-filled from NODE_PUBLIC_DOMAIN';
+                        nodeUrlField.parentNode.appendChild(indicator);
+                    }
+                    
+                    if (env.hasBunUrl) {
+                        const bunUrlField = document.getElementById('bunUrl');
+                        bunUrlField.value = env.bunUrl;
+                        bunUrlField.style.borderColor = '#fd7e14'; // Orange border to indicate auto-filled
+                        
+                        // Add a small indicator
+                        const indicator = document.createElement('small');
+                        indicator.style.color = '#fd7e14';
+                        indicator.style.display = 'block';
+                        indicator.textContent = '✅ Auto-filled from BUN_PUBLIC_DOMAIN';
+                        bunUrlField.parentNode.appendChild(indicator);
+                    }
+                    
+                    // If both URLs are available, show a success message
+                    if (env.hasNodeUrl && env.hasBunUrl) {
+                        const configSection = document.getElementById('configSection');
+                        const successMessage = document.createElement('div');
+                        successMessage.style.cssText = `
+                            background: #d4edda;
+                            border: 1px solid #c3e6cb;
+                            color: #155724;
+                            padding: 10px;
+                            border-radius: 5px;
+                            margin-bottom: 15px;
+                            font-size: 14px;
+                        `;
+                        successMessage.innerHTML = '🎉 URLs auto-detected from environment variables! Ready to battle.';
+                        configSection.insertBefore(successMessage, configSection.firstChild);
+                    }
+                    
+                } catch (error) {
+                    console.error('Failed to load environment URLs:', error);
                 }
             }
 

@@ -283,15 +283,20 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         type: 'ohaTestStart',
         sessionId,
         runtime,
-        message: `Starting oha test for ${runtime}`,
+        message: `Starting oha test for ${runtime} at ${testUrl}`,
         url: testUrl,
         config: { users: Math.min(users, 100), duration: Math.min(duration, 120) }
     });
     
     return new Promise((resolve, reject) => {
-        const oha = spawn('oha', args);
+        const oha = spawn('oha', args, {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: false
+        });
         
         let jsonOutput = '';
+        let errorOutput = '';
+        let hasStarted = false;
         let currentStats = {
             requests: 0,
             responses: 0,
@@ -300,35 +305,74 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             requestsPerSecond: 0
         };
         
+        console.log(`[${runtime}] oha process spawned with PID:`, oha.pid);
+        
         // Stream stdout (JSON output)
         oha.stdout.on('data', (data) => {
-            jsonOutput += data.toString();
+            const chunk = data.toString();
+            jsonOutput += chunk;
+            console.log(`[${runtime}] stdout:`, chunk.trim());
         });
         
         // Stream stderr (progress info)
         oha.stderr.on('data', (data) => {
             const chunk = data.toString();
+            errorOutput += chunk;
+            console.log(`[${runtime}] stderr:`, chunk.trim());
+            
+            if (!hasStarted) {
+                hasStarted = true;
+                broadcast({
+                    type: 'ohaProgress',
+                    sessionId,
+                    runtime,
+                    message: `oha process started for ${runtime}`,
+                    stats: currentStats,
+                    rawOutput: 'Process started...'
+                });
+            }
             
             // Parse progress information from oha's stderr
             const lines = chunk.split('\n').filter(line => line.trim());
             
             for (const line of lines) {
-                // Look for status updates from oha
-                if (line.includes('req/s') || line.includes('RPS') || line.includes('%')) {
-                    // Extract metrics from status line if possible
-                    const rpsMatch = line.match(/(\d+(?:\.\d+)?)\s*req\/s/);
-                    const avgMatch = line.match(/avg:\s*(\d+(?:\.\d+)?)\s*ms/);
-                    const errorMatch = line.match(/(\d+)\s*errors/);
-                    const requestMatch = line.match(/(\d+)\s*requests/);
-                    
-                    if (rpsMatch) currentStats.requestsPerSecond = parseFloat(rpsMatch[1]);
-                    if (avgMatch) currentStats.avgResponseTime = parseFloat(avgMatch[1]);
-                    if (errorMatch) currentStats.errors = parseInt(errorMatch[1]);
-                    if (requestMatch) currentStats.requests = parseInt(requestMatch[1]);
-                    
-                    currentStats.responses = currentStats.requests - currentStats.errors;
-                    
-                    // Broadcast live progress
+                // Look for various types of oha output
+                console.log(`[${runtime}] Processing line:`, line.trim());
+                
+                // Extract metrics from different possible formats
+                const rpsMatch = line.match(/(\d+(?:\.\d+)?)\s*(?:req\/s|RPS)/i);
+                const avgMatch = line.match(/(?:avg|average):\s*(\d+(?:\.\d+)?)\s*ms/i);
+                const errorMatch = line.match(/(\d+)\s*errors?/i);
+                const requestMatch = line.match(/(\d+)\s*requests?/i);
+                const completeMatch = line.match(/(\d+)\s*(?:completed|responses?)/i);
+                
+                let updated = false;
+                if (rpsMatch) {
+                    currentStats.requestsPerSecond = parseFloat(rpsMatch[1]);
+                    updated = true;
+                }
+                if (avgMatch) {
+                    currentStats.avgResponseTime = parseFloat(avgMatch[1]);
+                    updated = true;
+                }
+                if (errorMatch) {
+                    currentStats.errors = parseInt(errorMatch[1]);
+                    updated = true;
+                }
+                if (requestMatch) {
+                    currentStats.requests = parseInt(requestMatch[1]);
+                    updated = true;
+                }
+                if (completeMatch) {
+                    currentStats.responses = parseInt(completeMatch[1]);
+                    updated = true;
+                } else {
+                    currentStats.responses = Math.max(0, currentStats.requests - currentStats.errors);
+                }
+                
+                // Broadcast progress if we extracted any metrics or if it looks like a status line
+                if (updated || line.includes('%') || line.includes('req/s') || line.includes('ms')) {
+                    console.log(`[${runtime}] Broadcasting stats:`, currentStats);
                     broadcast({
                         type: 'ohaProgress',
                         sessionId,
@@ -342,17 +386,26 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         });
         
         oha.on('close', async (code) => {
+            console.log(`[${runtime}] oha process closed with code:`, code);
+            console.log(`[${runtime}] Final stdout:`, jsonOutput.substring(0, 500));
+            console.log(`[${runtime}] Final stderr:`, errorOutput.substring(0, 500));
+            
             try {
                 if (code !== 0) {
-                    console.error(`oha failed for ${runtime} with exit code ${code}`);
+                    console.error(`[${runtime}] oha failed with exit code ${code}`);
+                    console.error(`[${runtime}] Error output:`, errorOutput);
+                    
                     broadcast({
                         type: 'ohaError',
                         sessionId,
                         runtime,
-                        message: `oha failed with exit code ${code}`,
-                        error: `Exit code: ${code}`
+                        message: `oha failed with exit code ${code}: ${errorOutput.split('\n')[0]}`,
+                        error: `Exit code: ${code}`,
+                        fullError: errorOutput
                     });
+                    
                     // Fallback to fetch-based testing
+                    console.log(`[${runtime}] Falling back to fetch-based testing`);
                     return resolve(await runFetchTest(url, runtime, config));
                 }
                 
@@ -412,14 +465,24 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         });
         
         oha.on('error', async (error) => {
-            console.error(`oha spawn error for ${runtime}:`, error.message);
+            console.error(`[${runtime}] oha spawn error:`, error);
+            
+            // Check if it's a "command not found" type error
+            const isNotFound = error.code === 'ENOENT' || error.message.includes('not found');
+            const errorMsg = isNotFound 
+                ? `oha command not found. Please install oha: cargo install oha`
+                : `Failed to start oha: ${error.message}`;
+            
             broadcast({
                 type: 'ohaError',
                 sessionId,
                 runtime,
-                message: `Failed to start oha: ${error.message}. Please ensure oha is installed.`,
-                error: error.message
+                message: errorMsg,
+                error: error.message,
+                isNotFound
             });
+            
+            console.log(`[${runtime}] Falling back to fetch-based testing due to spawn error`);
             resolve(await runFetchTest(url, runtime, config));
         });
     });

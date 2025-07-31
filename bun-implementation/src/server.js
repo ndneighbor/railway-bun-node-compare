@@ -192,7 +192,7 @@ function matchRoute(method, pathname) {
 }
 
 // Router function using native routing
-function router(request) {
+async function router(request) {
     const url = new URL(request.url);
     const pathname = url.pathname;
     const method = request.method;

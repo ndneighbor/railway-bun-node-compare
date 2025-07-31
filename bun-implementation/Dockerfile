@@ -1,6 +1,15 @@
-FROM oven/bun:1.2.19-alpine
+FROM ubuntu:22.04
 
 WORKDIR /app
+
+# Install curl and bash for Bun installation
+RUN apt-get update && apt-get install -y curl bash && rm -rf /var/lib/apt/lists/*
+
+# Install Bun using the official install script (includes SIMD optimizations)
+RUN curl https://bun.sh/install | bash
+
+# Add Bun to PATH
+ENV PATH="/root/.bun/bin:$PATH"
 
 # Copy package files
 COPY package*.json ./
@@ -12,9 +21,14 @@ RUN bun install --production
 COPY . .
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S bunjs
-RUN adduser -S bunuser -u 1001
+RUN groupadd -g 1001 bunjs
+RUN useradd -m -u 1001 -g bunjs bunuser
+
+# Copy Bun to user directory and set permissions
+RUN cp -r /root/.bun /home/bunuser/.bun && chown -R bunuser:bunjs /home/bunuser/.bun
+
 USER bunuser
+ENV PATH="/home/bunuser/.bun/bin:$PATH"
 
 # Expose port
 EXPOSE $PORT

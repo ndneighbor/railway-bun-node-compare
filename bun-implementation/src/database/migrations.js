@@ -5,19 +5,9 @@ export async function runMigrations() {
     try {
         console.log('Running database migrations...');
         
-        // Read and execute schema using Bun.file if available, fallback to Node.js
+        // Use postgres.js sql.file() - works with both Bun and Node.js
         const schemaPath = join(import.meta.dir, 'schema.sql');
-        let schema;
-        
-        if (typeof Bun !== 'undefined' && Bun.file) {
-            const file = Bun.file(schemaPath);
-            schema = await file.text();
-        } else {
-            const { readFileSync } = await import('fs');
-            schema = readFileSync(schemaPath, 'utf8');
-        }
-        
-        await db.sql.unsafe(schema);
+        await db.sql.file(schemaPath);
         console.log('✅ Database schema created successfully');
         
     } catch (error) {

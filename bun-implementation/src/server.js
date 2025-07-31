@@ -130,6 +130,25 @@ const routes = {
     "GET /api/system/metrics": (request) => systemHandler.getMetrics(request),
     "POST /api/system/stress-test": (request) => systemHandler.stressTest(request),
     "POST /api/system/heap-dump": (request) => systemHandler.heapDump(request),
+
+    // Static file serving
+    "GET /static/*": (request) => {
+        const url = new URL(request.url);
+        const filePath = join(import.meta.dir, 'public', url.pathname.replace('/static/', ''));
+        
+        // Use Bun.file if available (drop-in replacement)
+        if (typeof Bun !== 'undefined' && Bun.file) {
+            return new Response(Bun.file(filePath));
+        } else {
+            // Fallback to Node.js style
+            try {
+                const file = readFileSync(filePath);
+                return new Response(file);
+            } catch {
+                return new Response('Not Found', { status: 404 });
+            }
+        }
+    },
 };
 
 // Compression helper using Bun's native gzip when available
@@ -218,26 +237,6 @@ async function router(request) {
         }
     }
 
-    // Static files (if needed) - using Bun.file when available
-    if (pathname.startsWith('/static/')) {
-        try {
-            const filePath = join(import.meta.dir, 'public', pathname.replace('/static/', ''));
-            
-            // Use Bun.file if available (drop-in replacement)
-            if (typeof Bun !== 'undefined' && Bun.file) {
-                const file = Bun.file(filePath);
-                if (await file.exists()) {
-                    return new Response(file);
-                }
-            } else {
-                // Fallback to Node.js style
-                const file = readFileSync(filePath);
-                return new Response(file);
-            }
-        } catch {
-            return new Response('Not Found', { status: 404 });
-        }
-    }
 
     // 404 for all other routes
     return new Response(JSON.stringify({

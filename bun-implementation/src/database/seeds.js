@@ -5,19 +5,9 @@ export async function seedDatabase() {
     try {
         console.log('Seeding database with sample data...');
         
-        // Read and execute seeds using Bun.file if available, fallback to Node.js
+        // Use postgres.js sql.file() - works with both Bun and Node.js
         const seedsPath = join(import.meta.dir, 'seeds.sql');
-        let seeds;
-        
-        if (typeof Bun !== 'undefined' && Bun.file) {
-            const file = Bun.file(seedsPath);
-            seeds = await file.text();
-        } else {
-            const { readFileSync } = await import('fs');
-            seeds = readFileSync(seedsPath, 'utf8');
-        }
-        
-        await db.sql.unsafe(seeds);
+        await db.sql.file(seedsPath);
         console.log('✅ Database seeded successfully');
         
     } catch (error) {

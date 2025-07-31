@@ -2,6 +2,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install oha for high-performance load testing
+RUN apk add --no-cache curl && \
+    curl -L https://github.com/hatoo/oha/releases/latest/download/oha-linux-musl-static -o /usr/local/bin/oha && \
+    chmod +x /usr/local/bin/oha
+
 # Copy package files
 COPY package*.json ./
 

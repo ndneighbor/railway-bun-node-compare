@@ -235,11 +235,11 @@ export class PerformanceHandler {
         return new Promise(async (resolve, reject) => {
             const { spawn } = await import('child_process');
             
-            // oha command with JSON output for easier parsing
+            // oha command with text output
             const args = [
                 '-z', `${config.duration}s`,  // Duration
                 '-c', config.users.toString(), // Concurrent connections
-                '--json',                       // JSON output
+                '--no-tui',                     // No TUI for programmatic usage
                 url
             ];
 
@@ -277,17 +277,30 @@ export class PerformanceHandler {
             oha.on('close', (code) => {
                 if (code === 0) {
                     try {
-                        // Parse JSON output from oha
-                        const result = JSON.parse(output);
+                        // Parse text output from oha
+                        const textOutput = output + errorOutput;
+                        
+                        // Extract basic metrics from text output
+                        const requestsMatch = textOutput.match(/(\d+)\s+requests?\s+in/i);
+                        const averageMatch = textOutput.match(/Average[:\s]+([\d.]+)\s*secs?/i);
+                        const requestsPerSecMatch = textOutput.match(/Requests\/sec[:\s]+([\d.]+)/i);
+                        const status200Match = textOutput.match(/\[200\]\s+(\d+)\s+responses?/i);
+                        
+                        const result = {
+                            url,
+                            summary: {
+                                total: requestsMatch ? parseInt(requestsMatch[1]) : 0,
+                                average: averageMatch ? parseFloat(averageMatch[1]) : 0,
+                                requestsPerSecond: requestsPerSecMatch ? parseFloat(requestsPerSecMatch[1]) : 0,
+                                successful: status200Match ? parseInt(status200Match[1]) : 0
+                            },
+                            rawOutput: textOutput
+                        };
+                        
                         broadcast({
                             status: 'endpoint_completed',
                             message: `Completed test for ${url}`,
-                            result: {
-                                url,
-                                summary: result.summary,
-                                latency: result.latency,
-                                requests: result.requests
-                            }
+                            result
                         });
                         resolve(result);
                     } catch (parseError) {

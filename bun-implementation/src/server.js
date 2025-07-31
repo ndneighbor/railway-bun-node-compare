@@ -31,8 +31,6 @@ const routes = {
         bunVersion: Bun?.version || null,
         bunRevision: Bun?.revision || null,
         usingBunServe: !!Bun?.serve,
-        usingBunSql: !!(typeof Bun !== 'undefined' && Bun.sql),
-        databaseClient: (typeof Bun !== 'undefined' && Bun.sql) ? 'Bun.sql (native)' : 'postgres.js',
         actualRuntime: typeof Bun !== 'undefined' ? 'bun' : 'node'
     }),
 

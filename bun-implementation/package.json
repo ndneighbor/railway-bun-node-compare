@@ -16,9 +16,5 @@
     "react-dom": "^18.2.0",
     "jsonwebtoken": "^9.0.0"
   },
-  "bunOptimizations": {
-    "database": "Uses native Bun.sql when available, fallback to postgres.js for Node.js compatibility",
-    "performance": "50% faster database queries with native Rust implementation"
-  },
   "type": "module"
 }

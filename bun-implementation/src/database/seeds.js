@@ -1,17 +1,13 @@
 import { join } from 'path';
-import { readFileSync } from 'fs';
 import db from './connection.js';
 
 export async function seedDatabase() {
     try {
         console.log('Seeding database with sample data...');
         
-        // Read seeds file and execute SQL
+        // Use sql.file() which works with postgres.js
         const seedsPath = join(import.meta.dir, 'seeds.sql');
-        const seeds = readFileSync(seedsPath, 'utf8');
-        
-        // Execute the entire seeds file
-        await db.sql.unsafe(seeds);
+        await db.sql.file(seedsPath);
         console.log('✅ Database seeded successfully');
         
     } catch (error) {

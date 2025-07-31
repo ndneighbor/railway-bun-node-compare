@@ -174,6 +174,36 @@ router.post('/benchmark', async (req, res, next) => {
     }
 });
 
+// GET /api/performance/memory - Get detailed memory usage
+router.get('/memory', async (req, res, next) => {
+    try {
+        const memUsage = process.memoryUsage();
+        const cpuUsage = process.cpuUsage();
+        
+        res.json({
+            runtime: 'node',
+            timestamp: new Date().toISOString(),
+            memory: {
+                rss: Math.round(memUsage.rss / 1024 / 1024 * 100) / 100, // MB
+                heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024 * 100) / 100, // MB  
+                heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024 * 100) / 100, // MB
+                external: Math.round(memUsage.external / 1024 / 1024 * 100) / 100, // MB
+                arrayBuffers: Math.round(memUsage.arrayBuffers / 1024 / 1024 * 100) / 100 // MB
+            },
+            cpu: {
+                user: cpuUsage.user,
+                system: cpuUsage.system
+            },
+            uptime: Math.round(process.uptime()),
+            platform: process.platform,
+            nodeVersion: process.version,
+            v8Version: process.versions.v8
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // GET /api/performance/endpoints - Get endpoint performance stats
 router.get('/endpoints', async (req, res, next) => {
     try {

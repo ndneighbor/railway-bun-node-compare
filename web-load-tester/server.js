@@ -285,6 +285,8 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         '-z', `${Math.min(duration, 120)}s`,  // Allow longer duration for real tests
         '-c', Math.min(users, 100).toString(), // Allow more concurrent connections
         '-q', Math.floor(users * 2).toString(),
+        '--no-tui',  // Disable TUI mode for programmatic output
+        '--json',    // Use JSON output format for easier parsing
         testUrl
     ];
     
@@ -347,14 +349,43 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         
         console.log(`[${runtime}] oha process spawned with PID:`, oha.pid);
         
-        // Stream stdout (JSON output)
+        // Stream stdout (JSON output from --json flag)
         oha.stdout.on('data', (data) => {
             const chunk = data.toString();
             jsonOutput += chunk;
             console.log(`[${runtime}] stdout:`, chunk.trim());
+            
+            // Try to parse JSON output if it looks complete
+            if (chunk.includes('}')) {
+                try {
+                    const jsonResult = JSON.parse(jsonOutput);
+                    // Broadcast parsed JSON results
+                    broadcast({
+                        type: 'ohaRawOutput',
+                        sessionId,
+                        runtime,
+                        message: `JSON Result: ${JSON.stringify(jsonResult, null, 2)}`,
+                        rawOutput: JSON.stringify(jsonResult, null, 2)
+                    });
+                } catch (e) {
+                    // Not complete JSON yet, continue accumulating
+                }
+            }
+            
+            // Also broadcast raw stdout
+            const lines = chunk.split('\n').filter(line => line.trim());
+            for (const line of lines) {
+                broadcast({
+                    type: 'ohaRawOutput',
+                    sessionId,
+                    runtime,
+                    message: line.trim(),
+                    rawOutput: line.trim()
+                });
+            }
         });
         
-        // Stream stderr (progress info) - just pipe the raw output
+        // Stream stderr (any error output)
         oha.stderr.on('data', (data) => {
             const chunk = data.toString();
             errorOutput += chunk;
@@ -364,15 +395,15 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                 hasStarted = true;
             }
             
-            // Just broadcast the raw oha output to the browser
+            // Broadcast stderr output (warnings, errors, etc.)
             const lines = chunk.split('\n').filter(line => line.trim());
             for (const line of lines) {
                 broadcast({
                     type: 'ohaRawOutput',
                     sessionId,
                     runtime,
-                    message: line.trim(),
-                    rawOutput: line.trim()
+                    message: `[stderr] ${line.trim()}`,
+                    rawOutput: `[stderr] ${line.trim()}`
                 });
             }
         });
@@ -402,26 +433,65 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                     return resolve(await runFetchTest(url, runtime, config, sessionId));
                 }
                 
-                // Parse text output from oha (no JSON support in this version)
-                console.log(`[${runtime}] Parsing oha text output:`, jsonOutput.substring(0, 500));
+                // Parse JSON output from oha --json flag
+                console.log(`[${runtime}] Parsing oha JSON output:`, jsonOutput.substring(0, 500));
                 
-                // Extract stats from text output using regex patterns
-                const textOutput = jsonOutput + errorOutput;
                 let finalStats = { ...currentStats };
                 
-                // Look for summary statistics in the final output
-                const avgLatencyMatch = textOutput.match(/Average:\s*([\d.]+)\s*ms/i);
-                const totalReqMatch = textOutput.match(/(\d+)\s*requests?\s*in/i);
-                const reqPerSecMatch = textOutput.match(/([\d.]+)\s*req\/s/i);
-                const errorMatch = textOutput.match(/(\d+)\s*errors?/i);
-                const successMatch = textOutput.match(/(\d+)\s*(?:success|2xx)/i);
-                
-                if (avgLatencyMatch) finalStats.avgResponseTime = parseFloat(avgLatencyMatch[1]);
-                if (totalReqMatch) finalStats.requests = parseInt(totalReqMatch[1]);
-                if (reqPerSecMatch) finalStats.requestsPerSecond = parseFloat(reqPerSecMatch[1]);
-                if (errorMatch) finalStats.errors = parseInt(errorMatch[1]);
-                if (successMatch) finalStats.responses = parseInt(successMatch[1]);
-                else finalStats.responses = Math.max(0, finalStats.requests - finalStats.errors);
+                try {
+                    const ohaResult = JSON.parse(jsonOutput);
+                    console.log(`[${runtime}] Parsed oha JSON:`, ohaResult);
+                    
+                    // Extract stats from JSON structure
+                    if (ohaResult.summary) {
+                        finalStats.avgResponseTime = (ohaResult.summary.average || 0) * 1000; // Convert to ms
+                        finalStats.requestsPerSecond = ohaResult.summary.requestsPerSecond || 0;
+                        finalStats.requests = ohaResult.summary.total || 0;
+                        finalStats.errors = 0; // Calculate from status codes
+                        
+                        // Count successful responses (2xx status codes)
+                        if (ohaResult.statusCodeDistribution) {
+                            let successfulResponses = 0;
+                            let totalErrors = 0;
+                            
+                            for (const [statusCode, count] of Object.entries(ohaResult.statusCodeDistribution)) {
+                                const code = parseInt(statusCode);
+                                if (code >= 200 && code < 300) {
+                                    successfulResponses += count;
+                                } else {
+                                    totalErrors += count;
+                                }
+                            }
+                            
+                            finalStats.responses = successfulResponses;
+                            finalStats.errors = totalErrors;
+                        } else {
+                            finalStats.responses = finalStats.requests; // Assume all successful if no breakdown
+                        }
+                    }
+                } catch (parseError) {
+                    console.log(`[${runtime}] Failed to parse JSON, falling back to text parsing:`, parseError.message);
+                    
+                    // Fallback to text parsing if JSON parsing fails
+                    const textOutput = jsonOutput + errorOutput;
+                    const avgLatencyMatch = textOutput.match(/Average:\s*([\d.]+)\s*(?:secs?|ms)/i);
+                    const totalReqMatch = textOutput.match(/(\d+)\s*requests?\s*in/i);
+                    const reqPerSecMatch = textOutput.match(/([\d.]+)\s*(?:req\/s|requests\/sec)/i);
+                    const errorMatch = textOutput.match(/(\d+)\s*errors?/i);
+                    const successMatch = textOutput.match(/(\d+)\s*(?:success|2xx)/i);
+                    
+                    if (avgLatencyMatch) {
+                        let latency = parseFloat(avgLatencyMatch[1]);
+                        // Convert to ms if in seconds
+                        if (textOutput.includes('secs')) latency *= 1000;
+                        finalStats.avgResponseTime = latency;
+                    }
+                    if (totalReqMatch) finalStats.requests = parseInt(totalReqMatch[1]);
+                    if (reqPerSecMatch) finalStats.requestsPerSecond = parseFloat(reqPerSecMatch[1]);
+                    if (errorMatch) finalStats.errors = parseInt(errorMatch[1]);
+                    if (successMatch) finalStats.responses = parseInt(successMatch[1]);
+                    else finalStats.responses = Math.max(0, finalStats.requests - finalStats.errors);
+                }
                 
                 // Use final stats from parsing or current stats as fallback
                 const transformedResults = {

@@ -322,6 +322,31 @@ export class PerformanceHandler {
         });
     }
 
+    // GET /api/performance/memory - Get detailed memory usage  
+    async getMemory(request) {
+        try {
+            const memUsage = process.memoryUsage();
+            
+            return Response.json({
+                runtime: 'bun',
+                timestamp: new Date().toISOString(),
+                memory: {
+                    rss: Math.round(memUsage.rss / 1024 / 1024 * 100) / 100, // MB
+                    heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024 * 100) / 100, // MB  
+                    heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024 * 100) / 100, // MB
+                    external: Math.round(memUsage.external / 1024 / 1024 * 100) / 100, // MB
+                    arrayBuffers: Math.round(memUsage.arrayBuffers / 1024 / 1024 * 100) / 100 // MB
+                },
+                uptime: Math.round(process.uptime()),
+                platform: process.platform,
+                bunVersion: Bun.version,
+                bunRevision: Bun.revision
+            });
+        } catch (error) {
+            return Response.json({ error: error.message }, { status: 500 });
+        }
+    }
+
     // GET /api/performance/endpoints - Get endpoint performance stats
     async getEndpoints(request) {
         try {

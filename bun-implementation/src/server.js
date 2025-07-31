@@ -140,6 +140,7 @@ const routes = {
     "GET /api/performance/compare": (request) => performanceHandler.compare(request),
     "POST /api/performance/benchmark": (request) => performanceHandler.benchmark(request),
     "GET /api/performance/endpoints": (request) => performanceHandler.getEndpoints(request),
+    "GET /api/performance/memory": (request) => performanceHandler.getMemory(request),
 
     // System routes
     "GET /api/system/metrics": (request) => systemHandler.getMetrics(request),

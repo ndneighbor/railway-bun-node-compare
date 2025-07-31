@@ -4,7 +4,7 @@ import { createServer } from 'http';
 import fetch from 'node-fetch';
 import { readFileSync } from 'fs';
 import { promises as fs } from 'fs';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -312,35 +312,19 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
     });
     
     return new Promise((resolve, reject) => {
-        // Try using stdbuf to force unbuffered output, fallback to direct oha
-        let command, commandArgs;
+        // Try using exec with shell to get better streaming
+        const fullCommand = `oha ${args.join(' ')}`;
+        console.log(`[${runtime}] Executing shell command: ${fullCommand}`);
         
-        // Check if stdbuf is available (common on Linux)
-        try {
-            const stdbufTest = spawn('which', ['stdbuf'], { stdio: 'ignore' });
-            stdbufTest.on('close', (code) => {
-                if (code === 0) {
-                    console.log(`[${runtime}] Using stdbuf for unbuffered output`);
-                }
-            });
-            
-            command = 'stdbuf';
-            commandArgs = ['-o0', '-e0', 'oha', ...args];  // -o0 = unbuffered stdout, -e0 = unbuffered stderr
-        } catch (e) {
-            command = 'oha';
-            commandArgs = args;
-        }
-        
-        const oha = spawn(command, commandArgs, {
-            stdio: ['ignore', 'pipe', 'pipe'],
-            shell: false,
+        const oha = exec(fullCommand, {
             env: { 
                 ...process.env, 
-                TERM: 'xterm-256color',  // Set terminal type for oha TUI
-                COLUMNS: '80',           // Set terminal width
-                LINES: '24',             // Set terminal height
-                RUST_LOG: 'debug'        // Enable Rust debug logging
-            }
+                TERM: 'xterm-256color',
+                COLUMNS: '80',
+                LINES: '24'
+            },
+            timeout: Math.min(duration, 120) * 1000 + 30000, // Add 30s buffer
+            maxBuffer: 1024 * 1024 * 10 // 10MB buffer
         });
         
         let jsonOutput = '';
@@ -382,7 +366,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             }
         }, 3000);
         
-        console.log(`[${runtime}] oha process spawned with PID:`, oha.pid);
+        console.log(`[${runtime}] oha process started with PID:`, oha.pid || 'unknown');
         
         // Function to strip ANSI escape sequences
         const stripAnsi = (str) => {
@@ -472,9 +456,9 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             }
         });
         
-        oha.on('close', async (code) => {
+        oha.on('close', async (code, signal) => {
             clearInterval(progressTimer);
-            console.log(`[${runtime}] oha process closed with code:`, code);
+            console.log(`[${runtime}] oha process closed with code:`, code, 'signal:', signal);
             console.log(`[${runtime}] Final stdout:`, jsonOutput.substring(0, 500));
             console.log(`[${runtime}] Final stderr:`, errorOutput.substring(0, 500));
             
@@ -605,9 +589,25 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             }
         });
         
+        oha.on('exit', async (code, signal) => {
+            clearInterval(progressTimer);
+            console.log(`[${runtime}] oha process exited with code:`, code, 'signal:', signal);
+            
+            // Handle the completion here if close event doesn't fire
+            if (!oha._closed) {
+                oha._closed = true;
+                try {
+                    await handleOhaCompletion(code, jsonOutput, errorOutput);
+                } catch (error) {
+                    console.error(`[${runtime}] Error handling completion:`, error);
+                    resolve(await runFetchTest(url, runtime, config, sessionId));
+                }
+            }
+        });
+
         oha.on('error', async (error) => {
             clearInterval(progressTimer);
-            console.error(`[${runtime}] oha spawn error:`, error);
+            console.error(`[${runtime}] oha error:`, error);
             
             // Check if it's a "command not found" type error
             const isNotFound = error.code === 'ENOENT' || error.message.includes('not found');

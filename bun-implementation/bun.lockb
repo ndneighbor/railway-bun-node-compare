@@ -1,0 +1,2 @@
+# This is Bun's lockfile - it will be generated automatically during the Docker build process
+# Bun creates a binary lockfile that ensures reproducible installs

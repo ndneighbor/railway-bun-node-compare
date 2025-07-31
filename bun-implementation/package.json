@@ -1,0 +1,21 @@
+{
+  "name": "bookstore-bun-railway",
+  "version": "1.0.0", 
+  "description": "Bun bookstore implementation for Railway performance comparison",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "bun run src/server.js",
+    "dev": "bun --watch src/server.js",
+    "migrate": "bun run src/database/migrations.js",
+    "seed": "bun run src/database/seeds.js",
+    "health": "bun -e \"const res = await fetch('http://localhost:' + process.env.PORT + '/api/health'); process.exit(res.ok ? 0 : 1)\""
+  },
+  "dependencies": {
+    "postgres": "^3.4.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "jsonwebtoken": "^9.0.0",
+    "bcryptjs": "^2.4.3"
+  },
+  "type": "module"
+}

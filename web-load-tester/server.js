@@ -240,30 +240,51 @@ app.get('/api/test/results/:sessionId', (req, res) => {
     res.json(session);
 });
 
-// oha-based load testing function
+// oha-based load testing function with fallback to fetch
 async function runOhaTest(url, runtime, config) {
     const { users, duration, endpoints } = config;
-    const outputFile = join('/tmp', `oha-results-${runtime}-${Date.now()}.json`);
     
-    // Use first endpoint for focused testing (oha works best with single URL)
+    // Check if oha is available
+    try {
+        const testOha = spawn('oha', ['--version']);
+        await new Promise((resolve, reject) => {
+            testOha.on('close', (code) => code === 0 ? resolve() : reject());
+            testOha.on('error', reject);
+        });
+    } catch (error) {
+        console.warn(`oha not available for ${runtime}, falling back to fetch-based testing`);
+        return runFetchTest(url, runtime, config);
+    }
+    
+    const outputFile = join(__dirname, `oha-results-${runtime}-${Date.now()}.json`);
+    
+    // Use first endpoint for focused testing (oha works best with single URL)  
     const testUrl = url + endpoints[0];
     
     const args = [
-        '-z', `${duration}s`,        // Duration-based test
-        '-c', users.toString(),      // Concurrent connections (users)
-        '-q', Math.floor(users * 2).toString(), // Queries per second (users * 2 for good load)
+        '-z', `${Math.min(duration, 30)}s`,  // Cap duration for testing
+        '-c', Math.min(users, 50).toString(), // Cap concurrent connections
+        '-q', Math.floor(users * 2).toString(),
         '--output-format', 'json',
         '-o', outputFile,
-        '--latency-correction',      // Avoid coordinated omission
-        '--disable-keepalive',       // More realistic testing
-        '--no-tui',                 // Disable terminal UI for programmatic usage
+        '--latency-correction',
+        '--disable-keepalive',
+        '--no-tui',
         testUrl
     ];
+    
+    console.log(`Running oha test for ${runtime}: oha ${args.join(' ')}`);
     
     return new Promise((resolve, reject) => {
         const oha = spawn('oha', args);
         
+        let stdout = '';
         let stderr = '';
+        
+        oha.stdout.on('data', (data) => {
+            stdout += data.toString();
+        });
+        
         oha.stderr.on('data', (data) => {
             stderr += data.toString();
         });
@@ -271,40 +292,136 @@ async function runOhaTest(url, runtime, config) {
         oha.on('close', async (code) => {
             try {
                 if (code !== 0) {
-                    reject(new Error(`oha exited with code ${code}: ${stderr}`));
-                    return;
+                    console.error(`oha failed for ${runtime}:`, stderr);
+                    // Fallback to fetch-based testing
+                    return resolve(await runFetchTest(url, runtime, config));
                 }
                 
-                const results = JSON.parse(await fs.readFile(outputFile, 'utf8'));
-                await fs.unlink(outputFile).catch(() => {}); // Cleanup, ignore errors
+                let results;
+                try {
+                    const fileContent = await fs.readFile(outputFile, 'utf8');
+                    results = JSON.parse(fileContent);
+                } catch (parseError) {
+                    console.error(`Failed to parse oha output for ${runtime}:`, parseError.message);
+                    return resolve(await runFetchTest(url, runtime, config));
+                }
                 
-                // Transform oha results to match our expected format
+                await fs.unlink(outputFile).catch(() => {}); // Cleanup
+                
+                // Transform oha results to match expected format
                 const transformedResults = {
-                    requests: results.summary.total,
-                    responses: results.summary.success_count,
-                    errors: results.summary.error_count,
-                    totalTime: results.summary.total_duration_secs * 1000,
-                    responseTimes: [], // oha doesn't provide individual times, just percentiles
-                    errorTypes: results.summary.error_distribution || {},
-                    avgResponseTime: results.latency.average_secs * 1000,
-                    requestsPerSecond: results.requests_per_sec.average,
+                    requests: results.summary?.total || 0,
+                    responses: results.summary?.success_count || 0,
+                    errors: results.summary?.error_count || 0,
+                    totalTime: (results.summary?.total_duration_secs || 0) * 1000,
+                    responseTimes: [],
+                    errorTypes: results.summary?.error_distribution || {},
+                    avgResponseTime: (results.latency?.average_secs || 0) * 1000,
+                    requestsPerSecond: results.requests_per_sec?.average || 0,
                     percentiles: {
-                        p50: results.latency.percentiles?.p50_secs * 1000 || 0,
-                        p95: results.latency.percentiles?.p95_secs * 1000 || 0,
-                        p99: results.latency.percentiles?.p99_secs * 1000 || 0
+                        p50: (results.latency?.percentiles?.p50_secs || 0) * 1000,
+                        p95: (results.latency?.percentiles?.p95_secs || 0) * 1000,
+                        p99: (results.latency?.percentiles?.p99_secs || 0) * 1000
                     }
                 };
                 
+                console.log(`oha test completed for ${runtime}:`, transformedResults);
                 resolve(transformedResults);
             } catch (error) {
-                reject(new Error(`Failed to parse oha results: ${error.message}`));
+                console.error(`oha processing error for ${runtime}:`, error.message);
+                resolve(await runFetchTest(url, runtime, config));
             }
         });
         
-        oha.on('error', (error) => {
-            reject(new Error(`Failed to spawn oha: ${error.message}`));
+        oha.on('error', async (error) => {
+            console.error(`oha spawn error for ${runtime}:`, error.message);
+            resolve(await runFetchTest(url, runtime, config));
         });
     });
+}
+
+// Fallback fetch-based testing (simplified version of old implementation)
+async function runFetchTest(url, runtime, config) {
+    const { users, duration, endpoints } = config;
+    const startTime = Date.now();
+    const endTime = startTime + (Math.min(duration, 30) * 1000); // Cap duration
+    
+    const results = {
+        requests: 0,
+        responses: 0,
+        errors: 0,
+        totalTime: 0,
+        responseTimes: [],
+        errorTypes: {},
+        avgResponseTime: 0,
+        requestsPerSecond: 0,
+        percentiles: { p50: 0, p95: 0, p99: 0 }
+    };
+    
+    const testPromises = [];
+    const maxConcurrent = Math.min(users, 20); // Limit concurrent requests
+    
+    for (let i = 0; i < maxConcurrent; i++) {
+        testPromises.push(
+            (async () => {
+                while (Date.now() < endTime) {
+                    const endpoint = endpoints[Math.floor(Math.random() * endpoints.length)];
+                    const testUrl = url + endpoint;
+                    const requestStart = Date.now();
+                    
+                    try {
+                        const response = await fetch(testUrl, {
+                            method: 'GET',
+                            timeout: 5000,
+                            headers: {
+                                'User-Agent': `LoadTester-${runtime}`,
+                                'Accept': 'application/json'
+                            }
+                        });
+                        
+                        const responseTime = Date.now() - requestStart;
+                        results.requests++;
+                        results.responses++;
+                        results.totalTime += responseTime;
+                        results.responseTimes.push(responseTime);
+                        
+                        // Keep only last 100 response times
+                        if (results.responseTimes.length > 100) {
+                            results.responseTimes.shift();
+                        }
+                    } catch (error) {
+                        const responseTime = Date.now() - requestStart;
+                        results.requests++;
+                        results.errors++;
+                        
+                        const errorType = error.code || error.name || 'Unknown';
+                        results.errorTypes[errorType] = (results.errorTypes[errorType] || 0) + 1;
+                    }
+                    
+                    // Small delay between requests
+                    await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
+                }
+            })()
+        );
+    }
+    
+    await Promise.all(testPromises);
+    
+    // Calculate final stats
+    const actualDuration = (Date.now() - startTime) / 1000;
+    results.avgResponseTime = results.totalTime / Math.max(results.responses, 1);
+    results.requestsPerSecond = results.responses / actualDuration;
+    
+    // Calculate percentiles
+    if (results.responseTimes.length > 0) {
+        const sorted = results.responseTimes.sort((a, b) => a - b);
+        results.percentiles.p50 = sorted[Math.floor(sorted.length * 0.5)] || 0;
+        results.percentiles.p95 = sorted[Math.floor(sorted.length * 0.95)] || 0;  
+        results.percentiles.p99 = sorted[Math.floor(sorted.length * 0.99)] || 0;
+    }
+    
+    console.log(`Fetch test completed for ${runtime}:`, results);
+    return results;
 }
 
 // Comparison test runner using oha

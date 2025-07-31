@@ -23,5 +23,5 @@ EXPOSE $PORT
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD bun -e "const res = await fetch('http://localhost:' + process.env.PORT + '/api/health'); process.exit(res.ok ? 0 : 1)"
 
-# Start application with GC optimizations
-CMD ["bun", "run", "--smol", "src/server.js"]
+# Start application
+CMD ["bun", "run", "src/server.js"]

@@ -4,22 +4,17 @@ export class AuthorsHandler {
     // GET /api/authors - List authors
     async list(request) {
         try {
-            const result = await db.query(`
+            const result = await db.sql`
                 SELECT a.*, COUNT(b.id) as book_count
                 FROM authors a
                 LEFT JOIN books b ON a.id = b.author_id
                 GROUP BY a.id
                 ORDER BY a.name
-            `);
+            `;
 
-            return new Response(JSON.stringify(result.rows), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -27,33 +22,25 @@ export class AuthorsHandler {
     async getById(request, id) {
         try {
             // Get author details
-            const authorResult = await db.query('SELECT * FROM authors WHERE id = $1', [id]);
+            const authorResult = await db.sql`SELECT * FROM authors WHERE id = ${id}`;
             
-            if (authorResult.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Author not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (authorResult.length === 0) {
+                return Response.json({ error: 'Author not found' }, { status: 404 });
             }
 
             // Get author's books
-            const booksResult = await db.query(`
+            const booksResult = await db.sql`
                 SELECT * FROM books 
-                WHERE author_id = $1 
+                WHERE author_id = ${id} 
                 ORDER BY created_at DESC
-            `, [id]);
+            `;
 
-            const author = authorResult.rows[0];
-            author.books = booksResult.rows;
+            const author = authorResult[0];
+            author.books = booksResult;
 
-            return new Response(JSON.stringify(author), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(author);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -64,27 +51,18 @@ export class AuthorsHandler {
             const { name, bio } = body;
 
             if (!name) {
-                return new Response(JSON.stringify({ error: 'Missing required field: name' }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                return Response.json({ error: 'Missing required field: name' }, { status: 400 });
             }
 
-            const result = await db.query(`
+            const result = await db.sql`
                 INSERT INTO authors (name, bio)
-                VALUES ($1, $2)
+                VALUES (${name}, ${bio})
                 RETURNING *
-            `, [name, bio]);
+            `;
 
-            return new Response(JSON.stringify(result.rows[0]), {
-                status: 201,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result[0], { status: 201 });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -94,29 +72,21 @@ export class AuthorsHandler {
             const body = await request.json();
             const { name, bio } = body;
 
-            const result = await db.query(`
+            const result = await db.sql`
                 UPDATE authors 
-                SET name = COALESCE($1, name),
-                    bio = COALESCE($2, bio)
-                WHERE id = $3
+                SET name = COALESCE(${name}, name),
+                    bio = COALESCE(${bio}, bio)
+                WHERE id = ${id}
                 RETURNING *
-            `, [name, bio, id]);
+            `;
 
-            if (result.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Author not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (result.length === 0) {
+                return Response.json({ error: 'Author not found' }, { status: 404 });
             }
 
-            return new Response(JSON.stringify(result.rows[0]), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result[0]);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -124,35 +94,24 @@ export class AuthorsHandler {
     async delete(request, id) {
         try {
             // Check if author has books
-            const booksResult = await db.query('SELECT COUNT(*) FROM books WHERE author_id = $1', [id]);
-            const bookCount = parseInt(booksResult.rows[0].count);
+            const booksResult = await db.sql`SELECT COUNT(*) FROM books WHERE author_id = ${id}`;
+            const bookCount = parseInt(booksResult[0].count);
 
             if (bookCount > 0) {
-                return new Response(JSON.stringify({ 
+                return Response.json({ 
                     error: `Cannot delete author with ${bookCount} books. Delete books first.` 
-                }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                }, { status: 400 });
             }
 
-            const result = await db.query('DELETE FROM authors WHERE id = $1 RETURNING *', [id]);
+            const result = await db.sql`DELETE FROM authors WHERE id = ${id} RETURNING *`;
 
-            if (result.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Author not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (result.length === 0) {
+                return Response.json({ error: 'Author not found' }, { status: 404 });
             }
 
-            return new Response(JSON.stringify({ message: 'Author deleted successfully' }), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ message: 'Author deleted successfully' });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 }

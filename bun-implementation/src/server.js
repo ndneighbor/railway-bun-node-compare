@@ -18,189 +18,186 @@ const PORT = process.env.PORT || 3000;
 // WebSocket connections for real-time metrics
 const wsConnections = new Set();
 
-// Router function
-function router(request) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const method = request.method;
+// Define routes using Bun's native routing
+const routes = {
+    // Health and system routes
+    "GET /api/health": () => Response.json({
+        status: 'healthy',
+        runtime: process.env.RUNTIME_NAME || 'bun',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        version: process.version,
+        bunVersion: Bun?.version || null,
+        bunRevision: Bun?.revision || null,
+        usingBunServe: !!Bun?.serve,
+        actualRuntime: typeof Bun !== 'undefined' ? 'bun' : 'node'
+    }),
 
-    // Health check endpoint (required for Railway)
-    if (path === '/api/health' && method === 'GET') {
-        return new Response(JSON.stringify({
-            status: 'healthy',
-            runtime: process.env.RUNTIME_NAME || 'bun',
-            timestamp: new Date().toISOString(),
-            uptime: process.uptime(),
-            memory: process.memoryUsage(),
-            version: process.version
-        }), {
-            headers: { 'Content-Type': 'application/json' }
-        });
-    }
+    "GET /": () => Response.json({
+        name: 'Bookstore API - Bun Implementation',
+        runtime: process.env.RUNTIME_NAME || 'bun',
+        version: '1.0.0',
+        endpoints: {
+            health: '/api/health',
+            books: '/api/books',
+            authors: '/api/authors',
+            orders: '/api/orders',
+            search: '/api/search',
+            performance: '/api/performance',
+            system: '/api/system',
+            websocket: '/ws/metrics'
+        },
+        documentation: 'Visit /api-docs for detailed API documentation'
+    }),
 
-    // Root route with basic info
-    if (path === '/' && method === 'GET') {
-        return new Response(JSON.stringify({
-            name: 'Bookstore API - Bun Implementation',
-            runtime: process.env.RUNTIME_NAME || 'bun',
-            version: '1.0.0',
-            endpoints: {
-                health: '/api/health',
-                books: '/api/books',
-                authors: '/api/authors',
-                orders: '/api/orders',
-                search: '/api/search',
-                performance: '/api/performance',
-                websocket: '/ws/metrics'
+    "GET /api-docs": () => Response.json({
+        title: 'Bookstore API Documentation',
+        version: '1.0.0',
+        runtime: process.env.RUNTIME_NAME || 'bun',
+        endpoints: {
+            books: {
+                'GET /api/books': 'List books with pagination (?page=1&limit=20&genre=&author=)',
+                'POST /api/books': 'Create new book (admin)',
+                'GET /api/books/:id': 'Get book details',
+                'PUT /api/books/:id': 'Update book (admin)',
+                'DELETE /api/books/:id': 'Delete book (admin)'
             },
-            documentation: 'Visit /api-docs for detailed API documentation'
-        }), {
-            headers: { 'Content-Type': 'application/json' }
-        });
-    }
-
-    // API documentation endpoint
-    if (path === '/api-docs' && method === 'GET') {
-        return new Response(JSON.stringify({
-            title: 'Bookstore API Documentation',
-            version: '1.0.0',
-            runtime: process.env.RUNTIME_NAME || 'bun',
-            endpoints: {
-                books: {
-                    'GET /api/books': 'List books with pagination (?page=1&limit=20&genre=&author=)',
-                    'POST /api/books': 'Create new book (admin)',
-                    'GET /api/books/:id': 'Get book details',
-                    'PUT /api/books/:id': 'Update book (admin)',
-                    'DELETE /api/books/:id': 'Delete book (admin)'
-                },
-                authors: {
-                    'GET /api/authors': 'List authors',
-                    'POST /api/authors': 'Create author (admin)',
-                    'GET /api/authors/:id': 'Get author with their books'
-                },
-                search: {
-                    'GET /api/search': 'Search books (?q=term&genre=&author=&minPrice=&maxPrice=)',
-                    'GET /api/search/suggestions': 'Get search suggestions',
-                    'GET /api/search/popular': 'Get popular search terms'
-                },
-                orders: {
-                    'POST /api/orders': 'Create new order',
-                    'GET /api/orders/:id': 'Get order details',
-                    'GET /api/orders': 'List orders (admin)',
-                    'PUT /api/orders/:id/status': 'Update order status (admin)'
-                },
-                performance: {
-                    'GET /api/performance/metrics': 'Get current runtime metrics',
-                    'POST /api/performance/benchmark': 'Trigger load test scenarios',
-                    'GET /api/performance/history': 'Get historical performance data',
-                    'GET /api/performance/compare': 'Compare with other runtime',
-                    'GET /api/performance/endpoints': 'Get endpoint performance stats'
-                }
+            authors: {
+                'GET /api/authors': 'List authors',
+                'POST /api/authors': 'Create author (admin)',
+                'GET /api/authors/:id': 'Get author with their books'
+            },
+            search: {
+                'GET /api/search': 'Search books (?q=term&genre=&author=&minPrice=&maxPrice=)',
+                'GET /api/search/suggestions': 'Get search suggestions',
+                'GET /api/search/popular': 'Get popular search terms'
+            },
+            orders: {
+                'POST /api/orders': 'Create new order',
+                'GET /api/orders/:id': 'Get order details',
+                'GET /api/orders': 'List orders (admin)',
+                'PUT /api/orders/:id/status': 'Update order status (admin)'
+            },
+            performance: {
+                'GET /api/performance/metrics': 'Get current runtime metrics',
+                'POST /api/performance/benchmark': 'Trigger load test scenarios',
+                'GET /api/performance/history': 'Get historical performance data',
+                'GET /api/performance/compare': 'Compare with other runtime',
+                'GET /api/performance/endpoints': 'Get endpoint performance stats'
+            },
+            system: {
+                'GET /api/system/metrics': 'Get detailed system metrics',
+                'POST /api/system/stress-test': 'Run CPU intensive test',
+                'POST /api/system/heap-dump': 'Analyze memory usage'
             }
-        }), {
-            headers: { 'Content-Type': 'application/json' }
-        });
-    }
+        }
+    }),
 
     // Books routes
-    if (path === '/api/books' && method === 'GET') {
-        return booksHandler.list(request);
-    }
-    if (path === '/api/books' && method === 'POST') {
-        return booksHandler.create(request);
-    }
-    if (path.match(/^\/api\/books\/\d+$/) && method === 'GET') {
-        const id = path.split('/').pop();
-        return booksHandler.getById(request, id);
-    }
-    if (path.match(/^\/api\/books\/\d+$/) && method === 'PUT') {
-        const id = path.split('/').pop();
-        return booksHandler.update(request, id);
-    }
-    if (path.match(/^\/api\/books\/\d+$/) && method === 'DELETE') {
-        const id = path.split('/').pop();
-        return booksHandler.delete(request, id);
-    }
+    "GET /api/books": (request) => booksHandler.list(request),
+    "POST /api/books": (request) => booksHandler.create(request),
+    "GET /api/books/:id": (request, { id }) => booksHandler.getById(request, id),
+    "PUT /api/books/:id": (request, { id }) => booksHandler.update(request, id),
+    "DELETE /api/books/:id": (request, { id }) => booksHandler.delete(request, id),
 
     // Authors routes
-    if (path === '/api/authors' && method === 'GET') {
-        return authorsHandler.list(request);
-    }
-    if (path === '/api/authors' && method === 'POST') {
-        return authorsHandler.create(request);
-    }
-    if (path.match(/^\/api\/authors\/\d+$/) && method === 'GET') {
-        const id = path.split('/').pop();
-        return authorsHandler.getById(request, id);
-    }
-    if (path.match(/^\/api\/authors\/\d+$/) && method === 'PUT') {
-        const id = path.split('/').pop();
-        return authorsHandler.update(request, id);
-    }
-    if (path.match(/^\/api\/authors\/\d+$/) && method === 'DELETE') {
-        const id = path.split('/').pop();
-        return authorsHandler.delete(request, id);
-    }
+    "GET /api/authors": (request) => authorsHandler.list(request),
+    "POST /api/authors": (request) => authorsHandler.create(request),
+    "GET /api/authors/:id": (request, { id }) => authorsHandler.getById(request, id),
+    "PUT /api/authors/:id": (request, { id }) => authorsHandler.update(request, id),
+    "DELETE /api/authors/:id": (request, { id }) => authorsHandler.delete(request, id),
 
     // Orders routes
-    if (path === '/api/orders' && method === 'POST') {
-        return ordersHandler.create(request);
-    }
-    if (path === '/api/orders' && method === 'GET') {
-        return ordersHandler.list(request);
-    }
-    if (path.match(/^\/api\/orders\/\d+$/) && method === 'GET') {
-        const id = path.split('/').pop();
-        return ordersHandler.getById(request, id);
-    }
-    if (path.match(/^\/api\/orders\/\d+\/status$/) && method === 'PUT') {
-        const id = path.split('/')[3];
-        return ordersHandler.updateStatus(request, id);
-    }
+    "POST /api/orders": (request) => ordersHandler.create(request),
+    "GET /api/orders": (request) => ordersHandler.list(request),
+    "GET /api/orders/:id": (request, { id }) => ordersHandler.getById(request, id),
+    "PUT /api/orders/:id/status": (request, { id }) => ordersHandler.updateStatus(request, id),
 
     // Search routes
-    if (path === '/api/search' && method === 'GET') {
-        return searchHandler.search(request);
-    }
-    if (path === '/api/search/suggestions' && method === 'GET') {
-        return searchHandler.suggestions(request);
-    }
-    if (path === '/api/search/popular' && method === 'GET') {
-        return searchHandler.popular(request);
-    }
+    "GET /api/search": (request) => searchHandler.search(request),
+    "GET /api/search/suggestions": (request) => searchHandler.suggestions(request),
+    "GET /api/search/popular": (request) => searchHandler.popular(request),
 
     // Performance routes
-    if (path === '/api/performance/metrics' && method === 'GET') {
-        return performanceHandler.getMetrics(request);
-    }
-    if (path === '/api/performance/history' && method === 'GET') {
-        return performanceHandler.getHistory(request);
-    }
-    if (path === '/api/performance/compare' && method === 'GET') {
-        return performanceHandler.compare(request);
-    }
-    if (path === '/api/performance/benchmark' && method === 'POST') {
-        return performanceHandler.benchmark(request);
-    }
-    if (path === '/api/performance/endpoints' && method === 'GET') {
-        return performanceHandler.getEndpoints(request);
-    }
+    "GET /api/performance/metrics": (request) => performanceHandler.getMetrics(request),
+    "GET /api/performance/history": (request) => performanceHandler.getHistory(request),
+    "GET /api/performance/compare": (request) => performanceHandler.compare(request),
+    "POST /api/performance/benchmark": (request) => performanceHandler.benchmark(request),
+    "GET /api/performance/endpoints": (request) => performanceHandler.getEndpoints(request),
 
     // System routes
-    if (path === '/api/system/metrics' && method === 'GET') {
-        return systemHandler.getMetrics(request);
+    "GET /api/system/metrics": (request) => systemHandler.getMetrics(request),
+    "POST /api/system/stress-test": (request) => systemHandler.stressTest(request),
+    "POST /api/system/heap-dump": (request) => systemHandler.heapDump(request),
+};
+
+// Route matcher function
+function matchRoute(method, pathname) {
+    // Try exact match first
+    const exactKey = `${method} ${pathname}`;
+    if (routes[exactKey]) {
+        return { handler: routes[exactKey], params: {} };
     }
-    if (path === '/api/system/stress-test' && method === 'POST') {
-        return systemHandler.stressTest(request);
+
+    // Try pattern matching for routes with parameters
+    for (const [pattern, handler] of Object.entries(routes)) {
+        const [routeMethod, routePath] = pattern.split(' ', 2);
+        if (routeMethod !== method) continue;
+
+        // Convert route pattern to regex
+        const paramNames = [];
+        const regexPattern = routePath.replace(/:([^\/]+)/g, (match, paramName) => {
+            paramNames.push(paramName);
+            return '([^/]+)';
+        });
+
+        const regex = new RegExp(`^${regexPattern}$`);
+        const match = pathname.match(regex);
+
+        if (match) {
+            const params = {};
+            paramNames.forEach((name, index) => {
+                params[name] = match[index + 1];
+            });
+            return { handler, params };
+        }
     }
-    if (path === '/api/system/heap-dump' && method === 'POST') {
-        return systemHandler.heapDump(request);
+
+    return null;
+}
+
+// Router function using native routing
+function router(request) {
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+    const method = request.method;
+
+    // Try to match route
+    const route = matchRoute(method, pathname);
+    
+    if (route) {
+        try {
+            return route.handler(request, route.params);
+        } catch (error) {
+            console.error('Route handler error:', error);
+            return new Response(JSON.stringify({
+                error: {
+                    message: 'Internal Server Error',
+                    status: 500,
+                    timestamp: new Date().toISOString()
+                }
+            }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
     }
 
     // Static files (if needed)
-    if (path.startsWith('/static/')) {
+    if (pathname.startsWith('/static/')) {
         try {
-            const filePath = join(import.meta.dir, 'public', path.replace('/static/', ''));
+            const filePath = join(import.meta.dir, 'public', pathname.replace('/static/', ''));
             const file = readFileSync(filePath);
             return new Response(file);
         } catch {
@@ -214,7 +211,7 @@ function router(request) {
             message: 'Not Found',
             status: 404,
             timestamp: new Date().toISOString(),
-            path,
+            path: pathname,
             method
         }
     }), {
@@ -288,11 +285,6 @@ async function startServer() {
                         } catch (error) {
                             console.error('Failed to store performance metrics:', error);
                         }
-                        
-                        // Trigger GC if memory usage is high
-                        if (endMemory.heapUsed > 100 * 1024 * 1024 && Bun?.gc) { // > 100MB
-                            Bun.gc(false);
-                        }
                     });
 
                     // Add performance headers
@@ -344,7 +336,7 @@ async function startServer() {
             }
         });
 
-        // Send periodic WebSocket updates with GC
+        // Send periodic WebSocket updates
         setInterval(async () => {
             if (wsConnections.size > 0) {
                 try {
@@ -363,22 +355,13 @@ async function startServer() {
                     console.error('Error getting performance stats:', error);
                 }
             }
-            
-            // Force garbage collection every 30 seconds if available
-            if (Bun?.gc) {
-                Bun.gc(false); // Non-blocking GC
-            }
         }, 5000); // Update every 5 seconds
-        
-        // More aggressive GC for high-load scenarios
-        setInterval(() => {
-            if (Bun?.gc) {
-                Bun.gc(false); // Non-blocking garbage collection
-            }
-        }, 30000); // Every 30 seconds
 
         console.log(`✅ Server running on port ${PORT}`);
         console.log(`📊 Runtime: ${process.env.RUNTIME_NAME || 'bun'}`);
+        console.log(`🟡 Bun Version: ${Bun?.version || 'Not detected'}`);
+        console.log(`🟡 Bun Revision: ${Bun?.revision || 'Not detected'}`);
+        console.log(`🟡 Using Bun.serve: ${!!Bun?.serve}`);
         console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
         console.log(`📖 API docs: http://localhost:${PORT}/api-docs`);
         console.log(`⚡ WebSocket: ws://localhost:${PORT}/ws/metrics`);

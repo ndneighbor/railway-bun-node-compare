@@ -14,99 +14,73 @@ export class SearchHandler {
             const limit = Math.min(parseInt(url.searchParams.get('limit')) || 20, 100);
 
             if (!q || q.trim().length === 0) {
-                return new Response(JSON.stringify({ error: 'Search query (q) is required' }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                return Response.json({ error: 'Search query (q) is required' }, { status: 400 });
             }
 
             const pageNum = parseInt(page);
             const limitNum = Math.min(parseInt(limit) || 20, 100);
             const offset = (pageNum - 1) * limitNum;
 
-            let query = `
-                SELECT b.*, a.name as author_name,
-                       ts_rank(
-                           to_tsvector('english', b.title || ' ' || COALESCE(b.description, '')),
-                           plainto_tsquery('english', $1)
-                       ) as rank
-                FROM books b
-                LEFT JOIN authors a ON b.author_id = a.id
-                WHERE (
-                    b.title ILIKE $2 OR 
-                    b.description ILIKE $2 OR
-                    b.genre ILIKE $2 OR
-                    a.name ILIKE $2 OR
-                    to_tsvector('english', b.title || ' ' || COALESCE(b.description, '')) @@ plainto_tsquery('english', $1)
-                )
-            `;
-
-            const params = [q.trim(), `%${q.trim()}%`];
-            let paramIndex = 3;
-
+            // Build dynamic query conditions safely
+            let conditions = [];
+            const searchTerm = q.trim();
+            
+            // Base search conditions
+            conditions.push(db.sql`(
+                b.title ILIKE ${'%' + searchTerm + '%'} OR 
+                b.description ILIKE ${'%' + searchTerm + '%'} OR
+                b.genre ILIKE ${'%' + searchTerm + '%'} OR
+                a.name ILIKE ${'%' + searchTerm + '%'}
+            )`);
+            
             // Add filters
-            if (genre) {
-                query += ` AND b.genre ILIKE $${paramIndex}`;
-                params.push(`%${genre}%`);
-                paramIndex++;
-            }
+            if (genre) conditions.push(db.sql`b.genre ILIKE ${'%' + genre + '%'}`);
+            if (author) conditions.push(db.sql`a.name ILIKE ${'%' + author + '%'}`);
+            if (minPrice) conditions.push(db.sql`b.price >= ${parseFloat(minPrice)}`);
+            if (maxPrice) conditions.push(db.sql`b.price <= ${parseFloat(maxPrice)}`);
 
-            if (author) {
-                query += ` AND a.name ILIKE $${paramIndex}`;
-                params.push(`%${author}%`);
-                paramIndex++;
-            }
-
-            if (minPrice) {
-                query += ` AND b.price >= $${paramIndex}`;
-                params.push(parseFloat(minPrice));
-                paramIndex++;
-            }
-
-            if (maxPrice) {
-                query += ` AND b.price <= $${paramIndex}`;
-                params.push(parseFloat(maxPrice));
-                paramIndex++;
-            }
+            const whereClause = db.sql`WHERE ${db.sql.join(conditions, db.sql` AND `)}`;
 
             // Get total count for pagination
-            const countQuery = query
-                .replace(/SELECT b\.\*, a\.name as author_name,[\s\S]*?FROM/, 'SELECT COUNT(*) FROM')
-                .replace(/ORDER BY[\s\S]*$/, '');
-            
-            const countResult = await db.query(countQuery, params);
-            const total = parseInt(countResult.rows[0].count);
+            const countResult = await db.sql`
+                SELECT COUNT(*) as count
+                FROM books b
+                LEFT JOIN authors a ON b.author_id = a.id
+                ${whereClause}
+            `;
+            const total = parseInt(countResult[0].count);
 
-            // Add ordering and pagination
-            query += ` ORDER BY rank DESC, b.title ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-            params.push(limitNum, offset);
-
-            const result = await db.query(query, params);
+            // Get paginated results
+            const result = await db.sql`
+                SELECT b.*, a.name as author_name
+                FROM books b
+                LEFT JOIN authors a ON b.author_id = a.id
+                ${whereClause}
+                ORDER BY b.title ASC 
+                LIMIT ${limitNum} OFFSET ${offset}
+            `;
 
             // Get search suggestions for similar terms
             let suggestions = [];
-            if (result.rows.length === 0) {
-                const suggestionQuery = `
-                    SELECT DISTINCT b.title, a.name as author_name, b.genre
-                    FROM books b
-                    LEFT JOIN authors a ON b.author_id = a.id
-                    WHERE similarity(b.title, $1) > 0.3 OR similarity(a.name, $1) > 0.3
-                    ORDER BY greatest(similarity(b.title, $1), similarity(a.name, $1)) DESC
-                    LIMIT 5
-                `;
-                
+            if (result.length === 0) {
                 try {
-                    const suggestionResult = await db.query(suggestionQuery, [q.trim()]);
-                    suggestions = suggestionResult.rows;
+                    const suggestionResult = await db.sql`
+                        SELECT DISTINCT b.title, a.name as author_name, b.genre
+                        FROM books b
+                        LEFT JOIN authors a ON b.author_id = a.id
+                        WHERE b.title ILIKE ${'%' + searchTerm + '%'} OR a.name ILIKE ${'%' + searchTerm + '%'}
+                        ORDER BY b.title ASC
+                        LIMIT 5
+                    `;
+                    suggestions = suggestionResult;
                 } catch (err) {
-                    // Similarity extension might not be available, continue without suggestions
-                    console.warn('Similarity search not available:', err.message);
+                    console.warn('Suggestion search failed:', err.message);
                 }
             }
 
-            return new Response(JSON.stringify({
+            return Response.json({
                 query: q.trim(),
-                results: result.rows,
+                results: result,
                 suggestions,
                 pagination: {
                     page: pageNum,
@@ -120,14 +94,9 @@ export class SearchHandler {
                     minPrice: minPrice ? parseFloat(minPrice) : null,
                     maxPrice: maxPrice ? parseFloat(maxPrice) : null
                 }
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -138,12 +107,12 @@ export class SearchHandler {
             const q = url.searchParams.get('q');
 
             if (!q || q.trim().length < 2) {
-                return new Response(JSON.stringify([]), {
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                return Response.json([]);
             }
 
-            const query = `
+            const searchTerm = `%${q.trim()}%`;
+            
+            const result = await db.sql`
                 SELECT DISTINCT 
                     b.title as suggestion,
                     'book' as type,
@@ -151,7 +120,7 @@ export class SearchHandler {
                     a.name as author_name
                 FROM books b
                 LEFT JOIN authors a ON b.author_id = a.id
-                WHERE b.title ILIKE $1
+                WHERE b.title ILIKE ${searchTerm}
                 
                 UNION
                 
@@ -161,7 +130,7 @@ export class SearchHandler {
                     a.id,
                     null as author_name
                 FROM authors a
-                WHERE a.name ILIKE $1
+                WHERE a.name ILIKE ${searchTerm}
                 
                 UNION
                 
@@ -171,66 +140,48 @@ export class SearchHandler {
                     null as id,
                     null as author_name
                 FROM books b
-                WHERE b.genre ILIKE $1 AND b.genre IS NOT NULL
+                WHERE b.genre ILIKE ${searchTerm} AND b.genre IS NOT NULL
                 
                 ORDER BY suggestion
                 LIMIT 10
             `;
-
-            const result = await db.query(query, [`%${q.trim()}%`]);
             
-            return new Response(JSON.stringify(result.rows), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
     // GET /api/search/popular - Get popular search terms
     async popular(request) {
         try {
-            // Get most popular genres
-            const genreQuery = `
-                SELECT genre as term, 'genre' as type, COUNT(*) as count
-                FROM books 
-                WHERE genre IS NOT NULL 
-                GROUP BY genre 
-                ORDER BY count DESC 
-                LIMIT 5
-            `;
-
-            // Get most popular authors
-            const authorQuery = `
-                SELECT a.name as term, 'author' as type, COUNT(b.id) as count
-                FROM authors a
-                LEFT JOIN books b ON a.id = b.author_id
-                GROUP BY a.id, a.name
-                ORDER BY count DESC
-                LIMIT 5
-            `;
-
             const [genreResult, authorResult] = await Promise.all([
-                db.query(genreQuery),
-                db.query(authorQuery)
+                db.sql`
+                    SELECT genre as term, 'genre' as type, COUNT(*) as count
+                    FROM books 
+                    WHERE genre IS NOT NULL 
+                    GROUP BY genre 
+                    ORDER BY count DESC 
+                    LIMIT 5
+                `,
+                db.sql`
+                    SELECT a.name as term, 'author' as type, COUNT(b.id) as count
+                    FROM authors a
+                    LEFT JOIN books b ON a.id = b.author_id
+                    GROUP BY a.id, a.name
+                    ORDER BY count DESC
+                    LIMIT 5
+                `
             ]);
 
             const popular = [
-                ...genreResult.rows,
-                ...authorResult.rows
+                ...genreResult,
+                ...authorResult
             ].sort((a, b) => b.count - a.count);
 
-            return new Response(JSON.stringify(popular), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(popular);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 }

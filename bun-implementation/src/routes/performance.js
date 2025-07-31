@@ -10,18 +10,13 @@ export class PerformanceHandler {
             const metrics = await performanceMonitor.getMetrics(timeframe);
             const currentStats = await performanceMonitor.getCurrentStats();
 
-            return new Response(JSON.stringify({
+            return Response.json({
                 current: currentStats,
                 metrics,
                 timeframe
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -32,7 +27,18 @@ export class PerformanceHandler {
             const runtime = url.searchParams.get('runtime');
             const hours = Math.min(parseInt(url.searchParams.get('hours')) || 24, 168); // Max 1 week
 
-            let query = `
+            // Build dynamic query conditions safely
+            let conditions = [db.sql`timestamp > NOW() - INTERVAL '${hours} hours'`];
+            
+            if (runtime) {
+                conditions.push(db.sql`runtime = ${runtime}`);
+            }
+
+            const whereClause = conditions.length > 0 
+                ? db.sql`WHERE ${db.sql.join(conditions, db.sql` AND `)}`
+                : db.sql``;
+
+            const result = await db.sql`
                 SELECT 
                     DATE_TRUNC('hour', timestamp) as hour,
                     runtime,
@@ -42,30 +48,14 @@ export class PerformanceHandler {
                     AVG(memory_usage_mb) as avg_memory_usage,
                     COUNT(*) as request_count
                 FROM performance_metrics 
-                WHERE timestamp > NOW() - INTERVAL '${hours} hours'
-            `;
-
-            const params = [];
-            if (runtime) {
-                query += ' AND runtime = $1';
-                params.push(runtime);
-            }
-
-            query += `
+                ${whereClause}
                 GROUP BY DATE_TRUNC('hour', timestamp), runtime
                 ORDER BY hour DESC, runtime
             `;
-
-            const result = await db.query(query, params);
             
-            return new Response(JSON.stringify(result.rows), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -78,7 +68,7 @@ export class PerformanceHandler {
 
             // Get current runtime metrics
             const currentRuntime = process.env.RUNTIME_NAME || 'bun';
-            const query = `
+            const result = await db.sql`
                 SELECT 
                     runtime,
                     endpoint,
@@ -92,9 +82,7 @@ export class PerformanceHandler {
                 GROUP BY runtime, endpoint
                 ORDER BY runtime, endpoint
             `;
-
-            const result = await db.query(query);
-            const localMetrics = result.rows;
+            const localMetrics = result;
 
             let comparison = {
                 local: {
@@ -131,14 +119,9 @@ export class PerformanceHandler {
                 }
             }
 
-            return new Response(JSON.stringify(comparison), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(comparison);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -158,12 +141,9 @@ export class PerformanceHandler {
             };
 
             if (!scenarios[scenario]) {
-                return new Response(JSON.stringify({ 
+                return Response.json({ 
                     error: `Invalid scenario. Available: ${Object.keys(scenarios).join(', ')}` 
-                }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                }, { status: 400 });
             }
 
             const config = scenarios[scenario];
@@ -179,25 +159,20 @@ export class PerformanceHandler {
             };
 
             // Store benchmark start
-            await db.query(
-                'INSERT INTO performance_metrics (runtime, endpoint, response_time_ms, memory_usage_mb) VALUES ($1, $2, $3, $4)',
-                [process.env.RUNTIME_NAME || 'bun', `/benchmark/${scenario}`, 0, process.memoryUsage().heapUsed / 1024 / 1024]
-            );
+            await db.sql`
+                INSERT INTO performance_metrics (runtime, endpoint, response_time_ms, memory_usage_mb) 
+                VALUES (${process.env.RUNTIME_NAME || 'bun'}, ${`/benchmark/${scenario}`}, ${0}, ${process.memoryUsage().heapUsed / 1024 / 1024})
+            `;
 
             // In a real implementation, you would start the actual load test here
             // For this demo, we'll return the configuration and suggest using external tools
-            return new Response(JSON.stringify({
+            return Response.json({
                 ...benchmarkResults,
                 message: 'Benchmark initiated. Use external load testing tools like wrk, artillery, or k6 for actual load testing.',
                 suggested_command: `wrk -t${config.users} -c${config.users} -d${config.duration}s --timeout 10s http://localhost:${process.env.PORT || 3000}${config.endpoints[0]}`
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -207,7 +182,7 @@ export class PerformanceHandler {
             const url = new URL(request.url);
             const hours = parseInt(url.searchParams.get('hours')) || 24;
             
-            const query = `
+            const result = await db.sql`
                 SELECT 
                     endpoint,
                     COUNT(*) as total_requests,
@@ -219,21 +194,14 @@ export class PerformanceHandler {
                     AVG(memory_usage_mb) as avg_memory_usage
                 FROM performance_metrics 
                 WHERE timestamp > NOW() - INTERVAL '${hours} hours'
-                    AND runtime = $1
+                    AND runtime = ${process.env.RUNTIME_NAME || 'bun'}
                 GROUP BY endpoint
                 ORDER BY total_requests DESC
             `;
-
-            const result = await db.query(query, [process.env.RUNTIME_NAME || 'bun']);
             
-            return new Response(JSON.stringify(result.rows), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 }

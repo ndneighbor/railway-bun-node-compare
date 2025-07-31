@@ -5,7 +5,7 @@ export class SystemHandler {
             const memUsage = process.memoryUsage();
             const cpuUsage = process.cpuUsage();
             
-            return new Response(JSON.stringify({
+            return Response.json({
                 timestamp: new Date().toISOString(),
                 runtime: process.env.RUNTIME_NAME || 'bun',
                 process: {
@@ -41,14 +41,9 @@ export class SystemHandler {
                     version: Bun?.version || 'unknown',
                     revision: Bun?.revision || 'unknown'
                 }
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -74,21 +69,16 @@ export class SystemHandler {
             const operations = stressTest();
             const actualDuration = Date.now() - startTime;
             
-            return new Response(JSON.stringify({
+            return Response.json({
                 message: 'Stress test completed',
                 duration: actualDuration,
                 operations,
                 operationsPerSecond: Math.round(operations / (actualDuration / 1000)),
                 memoryAfter: process.memoryUsage(),
                 runtime: 'bun'
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -96,9 +86,7 @@ export class SystemHandler {
     async heapDump(request) {
         try {
             // Force garbage collection if available
-            if (Bun?.gc) {
-                Bun.gc(true);
-            } else if (global.gc) {
+            if (global.gc) {
                 global.gc();
             }
             
@@ -113,15 +101,13 @@ export class SystemHandler {
             testObjects.length = 0;
             
             // Force GC again if available
-            if (Bun?.gc) {
-                Bun.gc(true);
-            } else if (global.gc) {
+            if (global.gc) {
                 global.gc();
             }
             
             const memAfter = process.memoryUsage();
             
-            return new Response(JSON.stringify({
+            return Response.json({
                 message: 'Heap dump analysis completed',
                 memory: {
                     before: {
@@ -137,16 +123,11 @@ export class SystemHandler {
                         heapTotal: Math.round(memAfter.heapTotal / 1024 / 1024)
                     }
                 },
-                gcAvailable: !!(Bun?.gc || global.gc),
+                gcAvailable: !!global.gc,
                 runtime: 'bun'
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -221,8 +202,7 @@ export class SystemHandler {
     getGCStats() {
         try {
             const stats = {
-                available: !!(Bun?.gc || global.gc),
-                bunGC: !!Bun?.gc,
+                available: !!global.gc,
                 nodeGC: !!global.gc
             };
 

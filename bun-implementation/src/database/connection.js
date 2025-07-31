@@ -3,19 +3,25 @@ import postgres from 'postgres';
 class Database {
     constructor() {
         this.sql = postgres(process.env.DATABASE_URL, {
-            ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
             max: 20,
             idle_timeout: 20,
             connect_timeout: 10,
         });
     }
 
-    async query(text, params = []) {
+    // Using SQL template tags for safe queries (no more unsafe string interpolation)
+    async query(strings, ...values) {
         const start = Date.now();
         try {
-            const result = await this.sql.unsafe(text, params);
+            // Use postgres template tag for safe parameterized queries
+            const result = await this.sql(strings, ...values);
             const duration = Date.now() - start;
-            console.log('Query executed', { text: text.substring(0, 50), duration, rows: result.length });
+            console.log('Query executed', { 
+                query: strings[0]?.substring(0, 50), 
+                duration, 
+                rows: result.length 
+            });
             return { rows: result, rowCount: result.length };
         } catch (error) {
             console.error('Database query error:', error);

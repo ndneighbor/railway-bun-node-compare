@@ -8,21 +8,15 @@ export class OrdersHandler {
             const { items, customer_email } = body;
 
             if (!items || !Array.isArray(items) || items.length === 0) {
-                return new Response(JSON.stringify({ 
+                return Response.json({ 
                     error: 'Missing required field: items (non-empty array)' 
-                }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                }, { status: 400 });
             }
 
             if (!customer_email) {
-                return new Response(JSON.stringify({ 
+                return Response.json({ 
                     error: 'Missing required field: customer_email' 
-                }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                }, { status: 400 });
             }
 
             // Use transaction for order creation
@@ -89,15 +83,9 @@ export class OrdersHandler {
                 return { ...order, items: validatedItems };
             });
 
-            return new Response(JSON.stringify(result), {
-                status: 201,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result, { status: 201 });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -105,34 +93,26 @@ export class OrdersHandler {
     async getById(request, id) {
         try {
             // Get order details
-            const orderResult = await db.query('SELECT * FROM orders WHERE id = $1', [id]);
+            const orderResult = await db.sql`SELECT * FROM orders WHERE id = ${id}`;
 
-            if (orderResult.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Order not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (orderResult.length === 0) {
+                return Response.json({ error: 'Order not found' }, { status: 404 });
             }
 
             // Get order items with book details
-            const itemsResult = await db.query(`
+            const itemsResult = await db.sql`
                 SELECT oi.*, b.title, b.isbn, b.cover_url
                 FROM order_items oi
                 JOIN books b ON oi.book_id = b.id
-                WHERE oi.order_id = $1
-            `, [id]);
+                WHERE oi.order_id = ${id}
+            `;
 
-            const order = orderResult.rows[0];
-            order.items = itemsResult.rows;
+            const order = orderResult[0];
+            order.items = itemsResult;
 
-            return new Response(JSON.stringify(order), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(order);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -145,34 +125,22 @@ export class OrdersHandler {
             const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
             
             if (!status || !validStatuses.includes(status)) {
-                return new Response(JSON.stringify({ 
+                return Response.json({ 
                     error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` 
-                }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                }, { status: 400 });
             }
 
-            const result = await db.query(
-                'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-                [status, id]
-            );
+            const result = await db.sql`
+                UPDATE orders SET status = ${status} WHERE id = ${id} RETURNING *
+            `;
 
-            if (result.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Order not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (result.length === 0) {
+                return Response.json({ error: 'Order not found' }, { status: 404 });
             }
 
-            return new Response(JSON.stringify(result.rows[0]), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result[0]);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -185,41 +153,38 @@ export class OrdersHandler {
             const offset = (page - 1) * limit;
             const status = url.searchParams.get('status');
 
-            let query = 'SELECT * FROM orders';
-            const params = [];
-
-            if (status) {
-                query += ' WHERE status = $1';
-                params.push(status);
-            }
+            // Build dynamic query conditions safely
+            const whereClause = status 
+                ? db.sql`WHERE status = ${status}`
+                : db.sql``;
 
             // Get total count
-            const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-            const countResult = await db.query(countQuery, params);
-            const total = parseInt(countResult.rows[0].count);
+            const countResult = await db.sql`
+                SELECT COUNT(*) as count
+                FROM orders 
+                ${whereClause}
+            `;
+            const total = parseInt(countResult[0].count);
 
-            // Add pagination
-            query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-            params.push(limit, offset);
+            // Get paginated results
+            const result = await db.sql`
+                SELECT * FROM orders 
+                ${whereClause}
+                ORDER BY created_at DESC 
+                LIMIT ${limit} OFFSET ${offset}
+            `;
 
-            const result = await db.query(query, params);
-
-            return new Response(JSON.stringify({
-                orders: result.rows,
+            return Response.json({
+                orders: result,
                 pagination: {
                     page,
                     limit,
                     total,
                     pages: Math.ceil(total / limit)
                 }
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 }

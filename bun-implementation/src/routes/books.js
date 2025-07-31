@@ -14,100 +14,69 @@ export class BooksHandler {
             const maxPrice = url.searchParams.get('maxPrice');
             const search = url.searchParams.get('search');
 
-            let query = `
+            // Build dynamic query conditions safely
+            let conditions = [];
+            
+            if (genre) conditions.push(db.sql`b.genre ILIKE ${'%' + genre + '%'}`);
+            if (author) conditions.push(db.sql`a.name ILIKE ${'%' + author + '%'}`);
+            if (minPrice) conditions.push(db.sql`b.price >= ${parseFloat(minPrice)}`);
+            if (maxPrice) conditions.push(db.sql`b.price <= ${parseFloat(maxPrice)}`);
+            if (search) conditions.push(db.sql`(b.title ILIKE ${'%' + search + '%'} OR b.description ILIKE ${'%' + search + '%'})`);
+
+            const whereClause = conditions.length > 0 
+                ? db.sql` WHERE ${db.sql.join(conditions, db.sql` AND `)}`
+                : db.sql``;
+
+            // Get total count
+            const countResult = await db.sql`
+                SELECT COUNT(*) as count
+                FROM books b 
+                LEFT JOIN authors a ON b.author_id = a.id 
+                ${whereClause}
+            `;
+            const total = parseInt(countResult[0].count);
+
+            // Get paginated results
+            const result = await db.sql`
                 SELECT b.*, a.name as author_name 
                 FROM books b 
                 LEFT JOIN authors a ON b.author_id = a.id 
-                WHERE 1=1
+                ${whereClause}
+                ORDER BY b.created_at DESC 
+                LIMIT ${limit} OFFSET ${offset}
             `;
-            const params = [];
-            let paramIndex = 1;
 
-            if (genre) {
-                query += ` AND b.genre ILIKE $${paramIndex}`;
-                params.push(`%${genre}%`);
-                paramIndex++;
-            }
-
-            if (author) {
-                query += ` AND a.name ILIKE $${paramIndex}`;
-                params.push(`%${author}%`);
-                paramIndex++;
-            }
-
-            if (minPrice) {
-                query += ` AND b.price >= $${paramIndex}`;
-                params.push(parseFloat(minPrice));
-                paramIndex++;
-            }
-
-            if (maxPrice) {
-                query += ` AND b.price <= $${paramIndex}`;
-                params.push(parseFloat(maxPrice));
-                paramIndex++;
-            }
-
-            if (search) {
-                query += ` AND (b.title ILIKE $${paramIndex} OR b.description ILIKE $${paramIndex})`;
-                params.push(`%${search}%`);
-                paramIndex++;
-            }
-
-            // Get total count for pagination
-            const countQuery = query.replace('SELECT b.*, a.name as author_name', 'SELECT COUNT(*)');
-            const countResult = await db.query(countQuery, params);
-            const total = parseInt(countResult.rows[0].count);
-
-            // Add pagination
-            query += ` ORDER BY b.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-            params.push(limit, offset);
-
-            const result = await db.query(query, params);
-
-            return new Response(JSON.stringify({
-                books: result.rows,
+            return Response.json({
+                books: result,
                 pagination: {
                     page,
                     limit,
                     total,
                     pages: Math.ceil(total / limit)
                 }
-            }), {
-                headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
     // GET /api/books/:id - Get book details
     async getById(request, id) {
         try {
-            const result = await db.query(`
+            const result = await db.sql`
                 SELECT b.*, a.name as author_name, a.bio as author_bio
                 FROM books b 
                 LEFT JOIN authors a ON b.author_id = a.id 
-                WHERE b.id = $1
-            `, [id]);
+                WHERE b.id = ${id}
+            `;
 
-            if (result.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Book not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (result.length === 0) {
+                return Response.json({ error: 'Book not found' }, { status: 404 });
             }
 
-            return new Response(JSON.stringify(result.rows[0]), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result[0]);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -118,29 +87,20 @@ export class BooksHandler {
             const { title, author_id, price, stock, description, genre, isbn, cover_url } = body;
 
             if (!title || !author_id || !price) {
-                return new Response(JSON.stringify({ 
+                return Response.json({ 
                     error: 'Missing required fields: title, author_id, price' 
-                }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                }, { status: 400 });
             }
 
-            const result = await db.query(`
+            const result = await db.sql`
                 INSERT INTO books (title, author_id, price, stock, description, genre, isbn, cover_url)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                VALUES (${title}, ${author_id}, ${price}, ${stock || 0}, ${description}, ${genre}, ${isbn}, ${cover_url})
                 RETURNING *
-            `, [title, author_id, price, stock || 0, description, genre, isbn, cover_url]);
+            `;
 
-            return new Response(JSON.stringify(result.rows[0]), {
-                status: 201,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result[0], { status: 201 });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
@@ -150,58 +110,42 @@ export class BooksHandler {
             const body = await request.json();
             const { title, author_id, price, stock, description, genre, isbn, cover_url } = body;
 
-            const result = await db.query(`
+            const result = await db.sql`
                 UPDATE books 
-                SET title = COALESCE($1, title),
-                    author_id = COALESCE($2, author_id),
-                    price = COALESCE($3, price),
-                    stock = COALESCE($4, stock),
-                    description = COALESCE($5, description),
-                    genre = COALESCE($6, genre),
-                    isbn = COALESCE($7, isbn),
-                    cover_url = COALESCE($8, cover_url)
-                WHERE id = $9
+                SET title = COALESCE(${title}, title),
+                    author_id = COALESCE(${author_id}, author_id),
+                    price = COALESCE(${price}, price),
+                    stock = COALESCE(${stock}, stock),
+                    description = COALESCE(${description}, description),
+                    genre = COALESCE(${genre}, genre),
+                    isbn = COALESCE(${isbn}, isbn),
+                    cover_url = COALESCE(${cover_url}, cover_url)
+                WHERE id = ${id}
                 RETURNING *
-            `, [title, author_id, price, stock, description, genre, isbn, cover_url, id]);
+            `;
 
-            if (result.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Book not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (result.length === 0) {
+                return Response.json({ error: 'Book not found' }, { status: 404 });
             }
 
-            return new Response(JSON.stringify(result.rows[0]), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json(result[0]);
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 
     // DELETE /api/books/:id - Delete book (admin)
     async delete(request, id) {
         try {
-            const result = await db.query('DELETE FROM books WHERE id = $1 RETURNING *', [id]);
+            const result = await db.sql`DELETE FROM books WHERE id = ${id} RETURNING *`;
 
-            if (result.rows.length === 0) {
-                return new Response(JSON.stringify({ error: 'Book not found' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+            if (result.length === 0) {
+                return Response.json({ error: 'Book not found' }, { status: 404 });
             }
 
-            return new Response(JSON.stringify({ message: 'Book deleted successfully' }), {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ message: 'Book deleted successfully' });
         } catch (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
+            return Response.json({ error: error.message }, { status: 500 });
         }
     }
 }

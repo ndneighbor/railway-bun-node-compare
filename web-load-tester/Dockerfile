@@ -4,8 +4,9 @@ WORKDIR /app
 
 # Install oha for high-performance load testing
 RUN apk add --no-cache curl && \
-    curl -L https://github.com/hatoo/oha/releases/latest/download/oha-linux-musl-static -o /usr/local/bin/oha && \
-    chmod +x /usr/local/bin/oha
+    curl -L https://github.com/hatoo/oha/releases/latest/download/oha-linux-musl-x86_64 -o /usr/local/bin/oha && \
+    chmod +x /usr/local/bin/oha && \
+    /usr/local/bin/oha --version
 
 # Copy package files
 COPY package*.json ./

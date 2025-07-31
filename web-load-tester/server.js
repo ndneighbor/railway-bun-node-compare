@@ -270,7 +270,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
         });
     } catch (error) {
         console.warn(`oha not available for ${runtime}, falling back to fetch-based testing`);
-        return runFetchTest(url, runtime, config);
+        return runFetchTest(url, runtime, config, sessionId);
     }
     
     // Use first endpoint for focused testing (oha works best with single URL)  
@@ -416,7 +416,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                     
                     // Fallback to fetch-based testing
                     console.log(`[${runtime}] Falling back to fetch-based testing`);
-                    return resolve(await runFetchTest(url, runtime, config));
+                    return resolve(await runFetchTest(url, runtime, config, sessionId));
                 }
                 
                 let results;
@@ -431,7 +431,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                         message: `Failed to parse oha results`,
                         error: parseError.message
                     });
-                    return resolve(await runFetchTest(url, runtime, config));
+                    return resolve(await runFetchTest(url, runtime, config, sessionId));
                 }
                 
                 // Transform oha results to match expected format
@@ -470,7 +470,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                     message: `oha processing error`,
                     error: error.message
                 });
-                resolve(await runFetchTest(url, runtime, config));
+                resolve(await runFetchTest(url, runtime, config, sessionId));
             }
         });
         
@@ -493,7 +493,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             });
             
             console.log(`[${runtime}] Falling back to fetch-based testing due to spawn error`);
-            resolve(await runFetchTest(url, runtime, config));
+            resolve(await runFetchTest(url, runtime, config, sessionId));
         });
     });
 }
@@ -503,11 +503,25 @@ async function runOhaTest(url, runtime, config) {
     return runOhaTestWithStreaming(null, url, runtime, config);
 }
 
-// Fallback fetch-based testing (simplified version of old implementation)
-async function runFetchTest(url, runtime, config) {
+// Enhanced fetch-based testing with real-time streaming updates
+async function runFetchTest(url, runtime, config, sessionId = null) {
     const { users, duration, endpoints } = config;
     const startTime = Date.now();
-    const endTime = startTime + (Math.min(duration, 30) * 1000); // Cap duration
+    const endTime = startTime + (Math.min(duration, 120) * 1000); // Allow longer duration
+    
+    console.log(`[${runtime}] Starting fetch-based test as fallback`);
+    
+    // Broadcast test start
+    if (sessionId) {
+        broadcast({
+            type: 'ohaTestStart',
+            sessionId,
+            runtime,
+            message: `Starting fetch-based test for ${runtime} (oha fallback)`,
+            url: url + endpoints[0],
+            config: { users: Math.min(users, 50), duration: Math.min(duration, 120) }
+        });
+    }
     
     const results = {
         requests: 0,
@@ -521,8 +535,37 @@ async function runFetchTest(url, runtime, config) {
         percentiles: { p50: 0, p95: 0, p99: 0 }
     };
     
+    // Set up real-time progress broadcasting
+    let lastBroadcast = 0;
+    const broadcastInterval = 2000; // Broadcast every 2 seconds
+    
+    const broadcastProgress = () => {
+        if (sessionId && Date.now() - lastBroadcast > broadcastInterval) {
+            const elapsed = (Date.now() - startTime) / 1000;
+            const currentRps = results.responses / Math.max(elapsed, 0.1);
+            const currentAvg = results.totalTime / Math.max(results.responses, 1);
+            
+            broadcast({
+                type: 'ohaProgress',
+                sessionId,
+                runtime,
+                message: `Fetch test: ${results.requests} req, ${results.responses} resp, ${currentRps.toFixed(1)} RPS`,
+                stats: {
+                    requests: results.requests,
+                    responses: results.responses,
+                    errors: results.errors,
+                    avgResponseTime: currentAvg,
+                    requestsPerSecond: currentRps
+                },
+                rawOutput: `${results.requests} requests, ${results.responses} responses, ${currentRps.toFixed(1)} req/s`
+            });
+            
+            lastBroadcast = Date.now();
+        }
+    };
+    
     const testPromises = [];
-    const maxConcurrent = Math.min(users, 20); // Limit concurrent requests
+    const maxConcurrent = Math.min(users, 50); // Allow more concurrent requests
     
     for (let i = 0; i < maxConcurrent; i++) {
         testPromises.push(
@@ -535,10 +578,11 @@ async function runFetchTest(url, runtime, config) {
                     try {
                         const response = await fetch(testUrl, {
                             method: 'GET',
-                            timeout: 5000,
+                            timeout: 10000,
                             headers: {
-                                'User-Agent': `LoadTester-${runtime}`,
-                                'Accept': 'application/json'
+                                'User-Agent': `LoadTester-${runtime}-Fetch`,
+                                'Accept': 'application/json',
+                                'Connection': 'keep-alive'
                             }
                         });
                         
@@ -548,10 +592,13 @@ async function runFetchTest(url, runtime, config) {
                         results.totalTime += responseTime;
                         results.responseTimes.push(responseTime);
                         
-                        // Keep only last 100 response times
-                        if (results.responseTimes.length > 100) {
+                        // Keep only last 1000 response times for better percentile calculation
+                        if (results.responseTimes.length > 1000) {
                             results.responseTimes.shift();
                         }
+                        
+                        broadcastProgress();
+                        
                     } catch (error) {
                         const responseTime = Date.now() - requestStart;
                         results.requests++;
@@ -559,10 +606,12 @@ async function runFetchTest(url, runtime, config) {
                         
                         const errorType = error.code || error.name || 'Unknown';
                         results.errorTypes[errorType] = (results.errorTypes[errorType] || 0) + 1;
+                        
+                        broadcastProgress();
                     }
                     
-                    // Small delay between requests
-                    await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
+                    // Smaller delay for higher throughput
+                    await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
                 }
             })()
         );
@@ -583,7 +632,18 @@ async function runFetchTest(url, runtime, config) {
         results.percentiles.p99 = sorted[Math.floor(sorted.length * 0.99)] || 0;
     }
     
-    console.log(`Fetch test completed for ${runtime}:`, results);
+    // Broadcast completion
+    if (sessionId) {
+        broadcast({
+            type: 'ohaCompleted',
+            sessionId,
+            runtime,
+            message: `Fetch-based test completed for ${runtime}`,
+            results
+        });
+    }
+    
+    console.log(`[${runtime}] Fetch test completed:`, results);
     return results;
 }
 

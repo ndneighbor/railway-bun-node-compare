@@ -10,7 +10,7 @@ export async function runMigrations() {
         const schemaPath = join(import.meta.dir, 'schema.sql');
         const schema = readFileSync(schemaPath, 'utf8');
         
-        await db.query(schema);
+        await db.sql.unsafe(schema);
         console.log('✅ Database schema created successfully');
         
     } catch (error) {

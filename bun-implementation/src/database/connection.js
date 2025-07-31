@@ -10,24 +10,7 @@ class Database {
         });
     }
 
-    // Using SQL template tags for safe queries (no more unsafe string interpolation)
-    async query(strings, ...values) {
-        const start = Date.now();
-        try {
-            // Use postgres template tag for safe parameterized queries
-            const result = await this.sql(strings, ...values);
-            const duration = Date.now() - start;
-            console.log('Query executed', { 
-                query: strings[0]?.substring(0, 50), 
-                duration, 
-                rows: result.length 
-            });
-            return { rows: result, rowCount: result.length };
-        } catch (error) {
-            console.error('Database query error:', error);
-            throw error;
-        }
-    }
+    // Direct access to sql template function for queries
 
     async transaction(callback) {
         return await this.sql.begin(async (sql) => {

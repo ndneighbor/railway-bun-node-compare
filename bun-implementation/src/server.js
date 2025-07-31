@@ -243,8 +243,8 @@ async function startServer() {
             await runMigrations();
             
             // Seed database if no books exist
-            const booksCount = await db.query('SELECT COUNT(*) FROM books');
-            if (parseInt(booksCount.rows[0].count) === 0) {
+            const booksCount = await db.sql`SELECT COUNT(*) FROM books`;
+            if (parseInt(booksCount[0].count) === 0) {
                 console.log('No books found, seeding database...');
                 await seedDatabase();
             }
@@ -278,10 +278,10 @@ async function startServer() {
                     // Store metrics asynchronously
                     setImmediate(async () => {
                         try {
-                            await db.query(
-                                'INSERT INTO performance_metrics (runtime, endpoint, response_time_ms, memory_usage_mb) VALUES ($1, $2, $3, $4)',
-                                [process.env.RUNTIME_NAME || 'bun', new URL(request.url).pathname, responseTime, memoryUsage]
-                            );
+                            await db.sql`
+                                INSERT INTO performance_metrics (runtime, endpoint, response_time_ms, memory_usage_mb) 
+                                VALUES (${process.env.RUNTIME_NAME || 'bun'}, ${new URL(request.url).pathname}, ${responseTime}, ${memoryUsage})
+                            `;
                         } catch (error) {
                             console.error('Failed to store performance metrics:', error);
                         }

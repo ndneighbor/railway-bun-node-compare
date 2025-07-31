@@ -10,7 +10,7 @@ export async function seedDatabase() {
         const seedsPath = join(import.meta.dir, 'seeds.sql');
         const seeds = readFileSync(seedsPath, 'utf8');
         
-        await db.query(seeds);
+        await db.sql.unsafe(seeds);
         console.log('✅ Database seeded successfully');
         
     } catch (error) {

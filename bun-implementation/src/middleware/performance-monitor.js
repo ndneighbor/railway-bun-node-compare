@@ -24,10 +24,10 @@ class PerformanceMonitor {
                 // Store metrics asynchronously
                 setImmediate(async () => {
                     try {
-                        await db.query(
-                            'INSERT INTO performance_metrics (runtime, endpoint, response_time_ms, memory_usage_mb) VALUES ($1, $2, $3, $4)',
-                            [this.runtime, req.url.pathname, responseTime, memoryUsage]
-                        );
+                        await db.sql`
+                            INSERT INTO performance_metrics (runtime, endpoint, response_time_ms, memory_usage_mb) 
+                            VALUES (${this.runtime}, ${req.url.pathname}, ${responseTime}, ${memoryUsage})
+                        `;
                     } catch (error) {
                         console.error('Failed to store performance metrics:', error);
                     }
@@ -48,7 +48,7 @@ class PerformanceMonitor {
     }
 
     async getMetrics(timeframe = '1 hour') {
-        const query = `
+        const result = await db.sql`
             SELECT 
                 runtime,
                 endpoint,
@@ -58,13 +58,12 @@ class PerformanceMonitor {
                 AVG(memory_usage_mb) as avg_memory_usage,
                 COUNT(*) as request_count
             FROM performance_metrics 
-            WHERE timestamp > NOW() - INTERVAL '${timeframe}'
+            WHERE timestamp > NOW() - INTERVAL ${timeframe}
             GROUP BY runtime, endpoint
             ORDER BY avg_response_time DESC
         `;
         
-        const result = await db.query(query);
-        return result.rows;
+        return result;
     }
 
     async getCurrentStats() {

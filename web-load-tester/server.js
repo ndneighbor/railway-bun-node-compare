@@ -254,14 +254,25 @@ app.get('/api/test/results/:sessionId', (req, res) => {
 async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
     const { users, duration, endpoints } = config;
     
-    // Check if oha is available
+    // Check if oha is available and get version info
     try {
         const testOha = spawn('oha', ['--version']);
+        let versionOutput = '';
+        
+        testOha.stdout.on('data', (data) => {
+            versionOutput += data.toString();
+        });
+        
         await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => reject(new Error('Timeout')), 2000);
             testOha.on('close', (code) => {
                 clearTimeout(timeout);
-                code === 0 ? resolve() : reject(new Error(`Exit code ${code}`));
+                if (code === 0) {
+                    console.log(`[${runtime}] oha version:`, versionOutput.trim());
+                    resolve();
+                } else {
+                    reject(new Error(`Exit code ${code}`));
+                }
             });
             testOha.on('error', (err) => {
                 clearTimeout(timeout);
@@ -281,10 +292,10 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
     }
     const testUrl = baseUrl + endpoints[0];
     
+    // Try simpler args - maybe -q and --print-each are causing issues
     const args = [
         '-z', `${Math.min(duration, 120)}s`,  // Allow longer duration for real tests
         '-c', Math.min(users, 100).toString(), // Allow more concurrent connections
-        '-q', Math.floor(users * 2).toString(),
         testUrl
     ];
     
@@ -301,14 +312,34 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
     });
     
     return new Promise((resolve, reject) => {
-        const oha = spawn('oha', args, {
+        // Try using stdbuf to force unbuffered output, fallback to direct oha
+        let command, commandArgs;
+        
+        // Check if stdbuf is available (common on Linux)
+        try {
+            const stdbufTest = spawn('which', ['stdbuf'], { stdio: 'ignore' });
+            stdbufTest.on('close', (code) => {
+                if (code === 0) {
+                    console.log(`[${runtime}] Using stdbuf for unbuffered output`);
+                }
+            });
+            
+            command = 'stdbuf';
+            commandArgs = ['-o0', '-e0', 'oha', ...args];  // -o0 = unbuffered stdout, -e0 = unbuffered stderr
+        } catch (e) {
+            command = 'oha';
+            commandArgs = args;
+        }
+        
+        const oha = spawn(command, commandArgs, {
             stdio: ['ignore', 'pipe', 'pipe'],
             shell: false,
             env: { 
                 ...process.env, 
                 TERM: 'xterm-256color',  // Set terminal type for oha TUI
                 COLUMNS: '80',           // Set terminal width
-                LINES: '24'              // Set terminal height
+                LINES: '24',             // Set terminal height
+                RUST_LOG: 'debug'        // Enable Rust debug logging
             }
         });
         
@@ -363,7 +394,17 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             const chunk = data.toString();
             const cleanChunk = stripAnsi(chunk);
             jsonOutput += cleanChunk;
-            console.log(`[${runtime}] stdout:`, cleanChunk.trim());
+            console.log(`[${runtime}] stdout RAW:`, JSON.stringify(chunk.substring(0, 200)));
+            console.log(`[${runtime}] stdout CLEAN:`, cleanChunk.trim());
+            
+            // Broadcast any output we get
+            broadcast({
+                type: 'ohaRawOutput',
+                sessionId,
+                runtime,
+                message: `STDOUT: ${cleanChunk.trim()}`,
+                rawOutput: cleanChunk.trim()
+            });
             
             // Broadcast cleaned stdout lines
             const lines = cleanChunk.split('\n').filter(line => line.trim());
@@ -383,6 +424,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                     const reqMatch = progressLine.match(/Requests\s*:\s*(\d+)/i);
                     if (reqMatch) {
                         currentStats.requests = parseInt(reqMatch[1]);
+                        console.log(`[${runtime}] Parsed requests: ${currentStats.requests}`);
                     }
                 }
                 if (progressLine.includes('Fastest') || progressLine.includes('Average') || progressLine.includes('Slowest')) {
@@ -390,6 +432,7 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
                     const avgMatch = progressLine.match(/Average[:\s]+([\d.]+)\s*secs?/i);
                     if (avgMatch) {
                         currentStats.avgResponseTime = parseFloat(avgMatch[1]) * 1000;
+                        console.log(`[${runtime}] Parsed avg response time: ${currentStats.avgResponseTime}ms`);
                     }
                 }
             }
@@ -400,11 +443,21 @@ async function runOhaTestWithStreaming(sessionId, url, runtime, config) {
             const chunk = data.toString();
             const cleanChunk = stripAnsi(chunk);
             errorOutput += cleanChunk;
-            console.log(`[${runtime}] stderr:`, cleanChunk.trim());
+            console.log(`[${runtime}] stderr RAW:`, JSON.stringify(chunk.substring(0, 200)));
+            console.log(`[${runtime}] stderr CLEAN:`, cleanChunk.trim());
             
             if (!hasStarted) {
                 hasStarted = true;
             }
+            
+            // Broadcast any stderr output we get
+            broadcast({
+                type: 'ohaRawOutput',
+                sessionId,
+                runtime,
+                message: `STDERR: ${cleanChunk.trim()}`,
+                rawOutput: `STDERR: ${cleanChunk.trim()}`
+            });
             
             // Broadcast cleaned stderr output (warnings, errors, etc.)
             const lines = cleanChunk.split('\n').filter(line => line.trim());

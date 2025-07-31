@@ -132,6 +132,30 @@ const routes = {
     "POST /api/system/heap-dump": (request) => systemHandler.heapDump(request),
 };
 
+// Compression helper using Bun's native gzip when available
+function compressResponse(data, acceptEncoding) {
+    if (!acceptEncoding || !acceptEncoding.includes('gzip')) {
+        return { data, headers: {} };
+    }
+    
+    try {
+        if (typeof Bun !== 'undefined' && Bun.gzipSync) {
+            const compressed = Bun.gzipSync(Buffer.from(data));
+            return {
+                data: compressed,
+                headers: {
+                    'Content-Encoding': 'gzip',
+                    'Content-Length': compressed.length.toString()
+                }
+            };
+        }
+    } catch (error) {
+        console.warn('Compression failed, serving uncompressed:', error.message);
+    }
+    
+    return { data, headers: {} };
+}
+
 // Route matcher function
 function matchRoute(method, pathname) {
     // Try exact match first
@@ -194,12 +218,22 @@ function router(request) {
         }
     }
 
-    // Static files (if needed)
+    // Static files (if needed) - using Bun.file when available
     if (pathname.startsWith('/static/')) {
         try {
             const filePath = join(import.meta.dir, 'public', pathname.replace('/static/', ''));
-            const file = readFileSync(filePath);
-            return new Response(file);
+            
+            // Use Bun.file if available (drop-in replacement)
+            if (typeof Bun !== 'undefined' && Bun.file) {
+                const file = Bun.file(filePath);
+                if (await file.exists()) {
+                    return new Response(file);
+                }
+            } else {
+                // Fallback to Node.js style
+                const file = readFileSync(filePath);
+                return new Response(file);
+            }
         } catch {
             return new Response('Not Found', { status: 404 });
         }
@@ -308,7 +342,34 @@ async function startServer() {
                         }
                     });
 
-                    // Add performance headers
+                    // Try to compress JSON responses using Bun's native compression
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        try {
+                            const responseBody = await response.text();
+                            const acceptEncoding = request.headers.get('accept-encoding');
+                            const { data, headers: compressionHeaders } = compressResponse(responseBody, acceptEncoding);
+                            
+                            // Create new response with compression
+                            const compressedResponse = new Response(data, {
+                                status: response.status,
+                                statusText: response.statusText,
+                                headers: {
+                                    ...Object.fromEntries(response.headers.entries()),
+                                    ...compressionHeaders,
+                                    'X-Response-Time': `${responseTime}ms`,
+                                    'X-Memory-Usage': `${memoryUsage.toFixed(2)}MB`,
+                                    'X-Runtime': process.env.RUNTIME_NAME || 'bun'
+                                }
+                            });
+                            
+                            return compressedResponse;
+                        } catch (compressionError) {
+                            console.warn('Response compression failed:', compressionError.message);
+                        }
+                    }
+
+                    // Add performance headers to uncompressed response
                     response.headers.set('X-Response-Time', `${responseTime}ms`);
                     response.headers.set('X-Memory-Usage', `${memoryUsage.toFixed(2)}MB`);
                     response.headers.set('X-Runtime', process.env.RUNTIME_NAME || 'bun');

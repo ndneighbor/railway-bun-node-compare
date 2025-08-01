@@ -314,7 +314,23 @@ impl LoadTestWorker {
                         }
                     } else {
                         self.errors.fetch_add(1, Ordering::Relaxed);
-                        self.record_error(&format!("HTTP_{}", response.status().as_u16()));
+                        let status = response.status();
+                        let error_detail = match status.as_u16() {
+                            400 => "HTTP_400_Bad_Request",
+                            401 => "HTTP_401_Unauthorized",
+                            403 => "HTTP_403_Forbidden",
+                            404 => "HTTP_404_Not_Found",
+                            429 => "HTTP_429_Too_Many_Requests",
+                            500 => "HTTP_500_Internal_Server_Error",
+                            502 => "HTTP_502_Bad_Gateway",
+                            503 => "HTTP_503_Service_Unavailable",
+                            504 => "HTTP_504_Gateway_Timeout",
+                            _ => &format!("HTTP_{}_{}",
+                                status.as_u16(),
+                                status.canonical_reason().unwrap_or("Unknown")
+                            ),
+                        };
+                        self.record_error(error_detail);
                     }
                 }
                 Err(e) => {
@@ -323,12 +339,30 @@ impl LoadTestWorker {
                     let error_type = if e.is_timeout() {
                         "Timeout".to_string()
                     } else if e.is_connect() {
-                        "Connection".to_string()
+                        // Try to get more specific connection error info
+                        if let Some(source) = e.source() {
+                            format!("Connection: {}", source)
+                        } else {
+                            "Connection: Failed to establish connection".to_string()
+                        }
+                    } else if e.is_request() {
+                        format!("Request: {}", e)
+                    } else if e.is_body() {
+                        "Body: Failed to read response body".to_string()
+                    } else if e.is_decode() {
+                        "Decode: Failed to decode response".to_string()
+                    } else if e.is_redirect() {
+                        "Redirect: Too many redirects".to_string()
+                    } else if e.is_builder() {
+                        "Builder: Invalid request".to_string()
                     } else {
-                        "Other".to_string()
+                        format!("Unknown: {}", e)
                     };
                     
                     self.record_error(&error_type);
+                    
+                    // Log detailed error for debugging
+                    debug!("Worker {} error: {} - Full error: {:?}", self.worker_id, error_type, e);
                 }
             }
         }

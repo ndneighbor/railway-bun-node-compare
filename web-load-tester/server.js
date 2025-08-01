@@ -624,143 +624,220 @@ async function runComparisonTest(sessionId, nodeUrl, bunUrl, config) {
 
     const { users, duration, endpoints } = config;
     const startTime = Date.now();
-    const usersPerRuntime = Math.floor(users / 2);
 
-    console.log(`Starting streaming oha comparison test ${sessionId}: ${users} users (${usersPerRuntime} each), ${duration}s duration`);
-
-    // Initialize progress tracking
-    const progressTracker = {
-        nodeStats: { requests: 0, responses: 0, errors: 0, avgResponseTime: 0, requestsPerSecond: 0 },
-        bunStats: { requests: 0, responses: 0, errors: 0, avgResponseTime: 0, requestsPerSecond: 0 },
-        startTime: Date.now(),
-        duration: duration * 1000,
-        nodeCompleted: false,
-        bunCompleted: false
-    };
-
-    // Set up progress broadcasting interval
-    const progressInterval = setInterval(() => {
-        if (!activeSessions.has(sessionId)) {
-            clearInterval(progressInterval);
-            return;
-        }
-
-        const elapsed = (Date.now() - progressTracker.startTime) / 1000;
-        const progress = Math.min((elapsed / duration) * 100, 100);
-        
-        // Determine current winner
-        let winner = 'tie';
-        const nodeScore = progressTracker.nodeStats.requestsPerSecond - (progressTracker.nodeStats.avgResponseTime || 0) / 10;
-        const bunScore = progressTracker.bunStats.requestsPerSecond - (progressTracker.bunStats.avgResponseTime || 0) / 10;
-        
-        if (nodeScore > bunScore && progressTracker.nodeStats.errors <= progressTracker.bunStats.errors) {
-            winner = 'node';
-        } else if (bunScore > nodeScore && progressTracker.bunStats.errors <= progressTracker.nodeStats.errors) {
-            winner = 'bun';
-        }
-
-        // Broadcast live progress
-        broadcast({
-            type: 'progress',
-            sessionId,
-            progress,
-            comparison: {
-                node: {
-                    requests: progressTracker.nodeStats.requests,
-                    responses: progressTracker.nodeStats.responses,
-                    errors: progressTracker.nodeStats.errors,
-                    avgResponseTime: Math.round(progressTracker.nodeStats.avgResponseTime),
-                    errorRate: Math.round((progressTracker.nodeStats.errors / Math.max(progressTracker.nodeStats.requests, 1)) * 10000) / 100,
-                    rps: Math.round(progressTracker.nodeStats.requestsPerSecond * 100) / 100
-                },
-                bun: {
-                    requests: progressTracker.bunStats.requests,
-                    responses: progressTracker.bunStats.responses,
-                    errors: progressTracker.bunStats.errors,
-                    avgResponseTime: Math.round(progressTracker.bunStats.avgResponseTime),
-                    errorRate: Math.round((progressTracker.bunStats.errors / Math.max(progressTracker.bunStats.requests, 1)) * 10000) / 100,
-                    rps: Math.round(progressTracker.bunStats.requestsPerSecond * 100) / 100
-                },
-                winner
-            }
-        });
-
-        // Clear interval when both tests complete
-        if ((progressTracker.nodeCompleted && progressTracker.bunCompleted) || progress >= 100) {
-            clearInterval(progressInterval);
-        }
-    }, 2000); // Update every 2 seconds
-
-    // Listen for oha progress updates to update our tracker
-    const originalBroadcast = global.broadcast || broadcast;
-    global.broadcast = (data) => {
-        // Intercept oha progress messages for this session
-        if (data.sessionId === sessionId && data.type === 'ohaProgress') {
-            if (data.runtime === 'node') {
-                progressTracker.nodeStats = { ...progressTracker.nodeStats, ...data.stats };
-            } else if (data.runtime === 'bun') {
-                progressTracker.bunStats = { ...progressTracker.bunStats, ...data.stats };
-            }
-        } else if (data.sessionId === sessionId && data.type === 'ohaCompleted') {
-            if (data.runtime === 'node') {
-                progressTracker.nodeCompleted = true;
-            } else if (data.runtime === 'bun') {
-                progressTracker.bunCompleted = true;
-            }
-        }
-        
-        // Forward all messages to clients
-        originalBroadcast(data);
-    };
-
+    console.log(`Starting streaming comparison test ${sessionId}: ${users} users, ${duration}s duration`);
+    
+    // Use the Rust streaming service for both runtimes together
+    const streamingServiceUrl = 'https://blissful-celebration-production.up.railway.app';
+    
     try {
-        // Run oha tests in parallel for both runtimes with streaming
-        const [nodeResults, bunResults] = await Promise.all([
-            runOhaTestWithStreaming(sessionId, nodeUrl, 'node', { users: usersPerRuntime, duration, endpoints }),
-            runOhaTestWithStreaming(sessionId, bunUrl, 'bun', { users: usersPerRuntime, duration, endpoints })
-        ]);
-
-        // Restore original broadcast function
-        global.broadcast = originalBroadcast;
-        clearInterval(progressInterval);
-
-        // Update session results with final oha data
-        session.results.node = {
-            ...session.results.node,
-            ...nodeResults
-        };
-
-        session.results.bun = {
-            ...session.results.bun,
-            ...bunResults
-        };
-
-        session.status = 'completed';
-        session.progress = 100;
-        session.endTime = new Date();
-
-        console.log(`Streaming comparison test ${sessionId} completed successfully`);
+        // Import WebSocket client
+        const WebSocketClient = (await import('ws')).default;
         
-        // Calculate final comparison and advantages
-        const finalComparison = calculateFinalComparison(nodeResults, bunResults);
+        // Prepare URLs
+        let baseNodeUrl = nodeUrl;
+        if (!baseNodeUrl.startsWith('http://') && !baseNodeUrl.startsWith('https://')) {
+            baseNodeUrl = 'https://' + baseNodeUrl;
+        }
+        const nodeTestUrl = baseNodeUrl + endpoints[0];
         
-        // Broadcast final completed results
-        broadcast({
-            type: 'completed',
-            sessionId,
-            session,
-            comparison: finalComparison,
-            stats: {
-                node: nodeResults,
-                bun: bunResults
+        let baseBunUrl = bunUrl;
+        if (!baseBunUrl.startsWith('http://') && !baseBunUrl.startsWith('https://')) {
+            baseBunUrl = 'https://' + baseBunUrl;
+        }
+        const bunTestUrl = baseBunUrl + endpoints[0];
+        
+        // Connect to WebSocket for real-time updates
+        const ws = new WebSocketClient(`wss://blissful-celebration-production.up.railway.app/ws`);
+        
+        let testCompleted = false;
+        let testId = null;
+        let nodeResults = null;
+        let bunResults = null;
+        
+        ws.on('open', () => {
+            console.log('WebSocket connected for comparison test');
+        });
+        
+        ws.on('message', (data) => {
+            try {
+                const message = JSON.parse(data.toString());
+                
+                // Filter messages by test_id if we have one
+                if (testId && message.test_id !== testId) {
+                    return;
+                }
+                
+                // Handle different message types
+                switch (message.type) {
+                    case 'TestStarted':
+                        if (!testId) {
+                            testId = message.test_id;
+                            console.log(`Tracking comparison test ID: ${testId}`);
+                        }
+                        break;
+                        
+                    case 'Progress':
+                        // Update progress for the specific runtime
+                        const stats = {
+                            requests: message.requests_sent,
+                            responses: message.responses_received,
+                            errors: message.errors,
+                            avgResponseTime: message.avg_latency_ms,
+                            requestsPerSecond: message.current_rps
+                        };
+                        
+                        // Update session with progress
+                        if (message.runtime === 'node') {
+                            session.results.node = { ...session.results.node, ...stats };
+                        } else if (message.runtime === 'bun') {
+                            session.results.bun = { ...session.results.bun, ...stats };
+                        }
+                        
+                        // Calculate progress
+                        const progress = message.progress_percent || ((message.elapsed_seconds / duration) * 100);
+                        session.progress = Math.min(progress, 100);
+                        
+                        // Determine current winner
+                        const nodeScore = session.results.node.requestsPerSecond - (session.results.node.avgResponseTime || 0) / 10;
+                        const bunScore = session.results.bun.requestsPerSecond - (session.results.bun.avgResponseTime || 0) / 10;
+                        let winner = 'tie';
+                        if (nodeScore > bunScore) winner = 'node';
+                        else if (bunScore > nodeScore) winner = 'bun';
+                        
+                        // Broadcast progress
+                        broadcast({
+                            type: 'progress',
+                            sessionId,
+                            progress: session.progress,
+                            comparison: {
+                                node: {
+                                    requests: session.results.node.requests,
+                                    responses: session.results.node.responses,
+                                    errors: session.results.node.errors,
+                                    avgResponseTime: Math.round(session.results.node.avgResponseTime || 0),
+                                    errorRate: Math.round((session.results.node.errors / Math.max(session.results.node.requests, 1)) * 10000) / 100,
+                                    rps: Math.round((session.results.node.requestsPerSecond || 0) * 100) / 100
+                                },
+                                bun: {
+                                    requests: session.results.bun.requests,
+                                    responses: session.results.bun.responses,
+                                    errors: session.results.bun.errors,
+                                    avgResponseTime: Math.round(session.results.bun.avgResponseTime || 0),
+                                    errorRate: Math.round((session.results.bun.errors / Math.max(session.results.bun.requests, 1)) * 10000) / 100,
+                                    rps: Math.round((session.results.bun.requestsPerSecond || 0) * 100) / 100
+                                },
+                                winner
+                            }
+                        });
+                        break;
+                        
+                    case 'TestCompleted':
+                        // Store results for the specific runtime
+                        const results = message.results;
+                        const transformedResults = {
+                            requests: results.total_requests,
+                            responses: results.successful_requests,
+                            errors: results.failed_requests,
+                            totalTime: results.total_duration_seconds * 1000,
+                            responseTimes: [],
+                            errorTypes: results.error_types || {},
+                            avgResponseTime: results.avg_latency_ms,
+                            requestsPerSecond: results.requests_per_second,
+                            percentiles: {
+                                p50: results.p50_latency_ms,
+                                p95: results.p95_latency_ms,
+                                p99: results.p99_latency_ms
+                            }
+                        };
+                        
+                        if (message.runtime === 'node') {
+                            nodeResults = transformedResults;
+                            session.results.node = { ...session.results.node, ...transformedResults };
+                        } else if (message.runtime === 'bun') {
+                            bunResults = transformedResults;
+                            session.results.bun = { ...session.results.bun, ...transformedResults };
+                        }
+                        
+                        // Check if both tests are complete
+                        if (nodeResults && bunResults) {
+                            testCompleted = true;
+                            session.status = 'completed';
+                            session.progress = 100;
+                            session.endTime = new Date();
+                            
+                            // Calculate final comparison
+                            const finalComparison = calculateFinalComparison(nodeResults, bunResults);
+                            session.comparison = finalComparison;
+                            
+                            // Broadcast completion
+                            broadcast({
+                                type: 'completed',
+                                sessionId,
+                                session,
+                                comparison: finalComparison,
+                                stats: {
+                                    node: nodeResults,
+                                    bun: bunResults
+                                }
+                            });
+                            
+                            console.log(`Comparison test ${sessionId} completed successfully`);
+                            ws.close();
+                        }
+                        break;
+                        
+                    case 'TestError':
+                        broadcast({
+                            type: 'error',
+                            sessionId,
+                            message: `Test error for ${message.runtime}`,
+                            error: message.error
+                        });
+                        break;
+                }
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
             }
         });
+        
+        ws.on('error', (error) => {
+            console.error('WebSocket error:', error);
+        });
+        
+        ws.on('close', () => {
+            console.log('WebSocket closed');
+            if (!testCompleted) {
+                session.status = 'failed';
+                session.error = 'WebSocket connection closed unexpectedly';
+            }
+        });
+        
+        // Wait a moment for WebSocket to connect
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Start the test via Rust service API - both URLs at once
+        const testResponse = await fetch(`${streamingServiceUrl}/api/test/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                node_url: nodeTestUrl,
+                bun_url: bunTestUrl,
+                duration_seconds: Math.min(duration, 120),
+                connections: Math.min(users, 100),
+                rate_per_second: Math.min(users * 10, 1000)
+            })
+        });
+        
+        if (!testResponse.ok) {
+            throw new Error(`Failed to start test: ${testResponse.statusText}`);
+        }
+        
+        const { test_id } = await testResponse.json();
+        testId = test_id;
+        console.log(`Comparison test started with ID: ${test_id}`);
         
     } catch (error) {
-        // Restore original broadcast function
-        global.broadcast = originalBroadcast;
-        clearInterval(progressInterval);
-        
         console.error(`Comparison test ${sessionId} failed:`, error.message);
         session.status = 'failed';
         session.error = error.message;
@@ -773,7 +850,6 @@ async function runComparisonTest(sessionId, nodeUrl, bunUrl, config) {
         });
     }
 }
-
 // Calculate final comparison with advantages
 function calculateFinalComparison(nodeResults, bunResults) {
     let winner = 'tie';

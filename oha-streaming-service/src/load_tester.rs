@@ -4,6 +4,7 @@ use hdrhistogram::Histogram;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{
+    error::Error,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,

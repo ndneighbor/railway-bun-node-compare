@@ -277,6 +277,21 @@
             padding: 15px;
             border-radius: 8px;
             text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-card.highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .stat-card.error {
+            background: #fee;
         }
 
         .stat-value {
@@ -285,10 +300,100 @@
             color: #667eea;
         }
 
+        .stat-card.highlight .stat-value,
+        .stat-card.highlight .stat-label {
+            color: white;
+        }
+
+        .stat-card.error .stat-value {
+            color: #d00;
+        }
+
         .stat-label {
             font-size: 14px;
             color: #666;
             margin-top: 5px;
+        }
+
+        /* Percentile Section */
+        .percentile-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .percentile-section h4 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .percentile-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .percentile-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .percentile-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .percentile-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        /* Error Types Section */
+        .error-types-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #fee;
+            border-radius: 8px;
+        }
+
+        .error-types-section h4 {
+            margin-bottom: 10px;
+            color: #d00;
+            font-size: 16px;
+        }
+
+        .error-types {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .error-type-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+
+        .error-type {
+            font-weight: 500;
+            color: #666;
+        }
+
+        .error-count {
+            font-weight: bold;
+            color: #d00;
         }
 
         .log {
@@ -378,6 +483,119 @@
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
+        }
+
+        /* Visualization Styles */
+        .stats-summary {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .summary-item {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .summary-item .winner {
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 12px;
+            border-radius: 2px;
+        }
+
+        .legend-color.node {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .legend-color.bun {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+
+        .error-list.success {
+            background: #f0fdf4;
+            border-color: #86efac;
+        }
+
+        .error-list.success h4 {
+            color: #166534;
+        }
+
+        .no-errors {
+            text-align: center;
+            padding: 20px;
+            color: #166534;
+            font-weight: 500;
+        }
+
+        .error-summary {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .reliability-score {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .score-comparison {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .score-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .score {
+            font-size: 24px;
+            font-weight: bold;
+            padding: 10px 20px;
+            border-radius: 8px;
+        }
+
+        .score.excellent {
+            background: #f0fdf4;
+            color: #166534;
+        }
+
+        .score.good {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .score.poor {
+            background: #fee;
+            color: #991b1b;
         }
     </style>
 </head>
@@ -967,32 +1185,17 @@
                 const bunResults = document.getElementById('bunResults');
                 bunResults.innerHTML = this.formatRuntimeResults(stats.bun);
                 
-                // Performance gap analysis
+                // Performance gap analysis with visual chart
                 const performanceGap = document.getElementById('performanceGap');
-                performanceGap.innerHTML = `
-                    <div><strong>Response Time Gap:</strong> ${comparison.performanceGap.responseTime}ms</div>
-                    <div><strong>Throughput Gap:</strong> ${comparison.performanceGap.throughput.toFixed(1)} RPS</div>
-                    <div><strong>Error Rate Gap:</strong> ${comparison.performanceGap.errorRate.toFixed(2)}%</div>
-                `;
+                this.renderPerformanceGapChart(performanceGap, comparison.performanceGap, stats);
                 
-                // Response time comparison
+                // Response time comparison with visual chart
                 const responseTimeComparison = document.getElementById('responseTimeComparison');
-                responseTimeComparison.innerHTML = `
-                    <div><strong>Node.js:</strong> ${stats.node.avgResponseTime}ms avg (P95: ${stats.node.percentiles.p95}ms)</div>
-                    <div><strong>Bun:</strong> ${stats.bun.avgResponseTime}ms avg (P95: ${stats.bun.percentiles.p95}ms)</div>
-                    <div><strong>Winner:</strong> ${stats.node.avgResponseTime < stats.bun.avgResponseTime ? 'Node.js' : 'Bun'} 
-                         (${Math.abs(stats.node.avgResponseTime - stats.bun.avgResponseTime)}ms faster)</div>
-                `;
+                this.renderResponseTimeChart(responseTimeComparison, stats);
                 
-                // Error comparison
+                // Error analysis with breakdown
                 const errorComparison = document.getElementById('errorComparison');
-                const nodeErrors = Object.keys(stats.node.errorTypes).length;
-                const bunErrors = Object.keys(stats.bun.errorTypes).length;
-                errorComparison.innerHTML = `
-                    <div><strong>Node.js:</strong> ${stats.node.totalErrors} errors (${stats.node.errorRate}%)</div>
-                    <div><strong>Bun:</strong> ${stats.bun.totalErrors} errors (${stats.bun.errorRate}%)</div>
-                    <div><strong>More Reliable:</strong> ${stats.node.errorRate < stats.bun.errorRate ? 'Node.js' : 'Bun'}</div>
-                `;
+                this.renderErrorAnalysis(errorComparison, stats);
                 
                 this.logMessage(`🏁 Battle completed! Winner: ${comparison.winner.toUpperCase()}`);
             }
@@ -1008,33 +1211,75 @@
             }
 
             formatRuntimeResults(stats) {
+                // Handle the actual data structure from the server
+                const totalRequests = stats.requests || stats.totalRequests || 0;
+                const avgResponseTime = Math.round(stats.avgResponseTime || 0);
+                const rps = stats.requestsPerSecond ? Math.round(stats.requestsPerSecond * 100) / 100 : (stats.rps || 0);
+                const errorRate = stats.errors ? ((stats.errors / Math.max(totalRequests, 1)) * 100).toFixed(2) : (stats.errorRate || 0);
+                
+                // Get percentiles with fallback
+                const percentiles = stats.percentiles || {};
+                const p50 = Math.round(percentiles.p50 || avgResponseTime);
+                const p95 = Math.round(percentiles.p95 || avgResponseTime * 1.5);
+                const p99 = Math.round(percentiles.p99 || avgResponseTime * 2);
+                
                 return `
                     <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-value">${stats.totalRequests.toLocaleString()}</div>
+                        <div class="stat-card highlight">
+                            <div class="stat-value">${totalRequests.toLocaleString()}</div>
                             <div class="stat-label">Total Requests</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${stats.avgResponseTime}ms</div>
+                            <div class="stat-value">${stats.responses?.toLocaleString() || totalRequests.toLocaleString()}</div>
+                            <div class="stat-label">Successful</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${avgResponseTime}ms</div>
                             <div class="stat-label">Avg Response</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${stats.rps}</div>
-                            <div class="stat-label">RPS</div>
+                            <div class="stat-value">${rps}</div>
+                            <div class="stat-label">Requests/Sec</div>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${stats.errorRate}%</div>
+                        <div class="stat-card ${errorRate > 5 ? 'error' : ''}">
+                            <div class="stat-value">${errorRate}%</div>
                             <div class="stat-label">Error Rate</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${stats.percentiles.p50}ms</div>
-                            <div class="stat-label">P50</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${stats.percentiles.p95}ms</div>
-                            <div class="stat-label">P95</div>
+                            <div class="stat-value">${stats.errors || 0}</div>
+                            <div class="stat-label">Total Errors</div>
                         </div>
                     </div>
+                    <div class="percentile-section">
+                        <h4>Response Time Percentiles</h4>
+                        <div class="percentile-grid">
+                            <div class="percentile-item">
+                                <span class="percentile-label">P50 (Median)</span>
+                                <span class="percentile-value">${p50}ms</span>
+                            </div>
+                            <div class="percentile-item">
+                                <span class="percentile-label">P95</span>
+                                <span class="percentile-value">${p95}ms</span>
+                            </div>
+                            <div class="percentile-item">
+                                <span class="percentile-label">P99</span>
+                                <span class="percentile-value">${p99}ms</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${Object.keys(stats.errorTypes || {}).length > 0 ? `
+                        <div class="error-types-section">
+                            <h4>Error Breakdown</h4>
+                            <div class="error-types">
+                                ${Object.entries(stats.errorTypes || {}).map(([type, count]) => `
+                                    <div class="error-type-item">
+                                        <span class="error-type">${type}</span>
+                                        <span class="error-count">${count}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
                 `;
             }
 
@@ -1054,21 +1299,83 @@
                 log.scrollTop = log.scrollHeight;
             }
 
-            exportResults() {
-                // Create downloadable JSON file with results
-                const data = {
-                    sessionId: this.currentSessionId,
-                    timestamp: new Date().toISOString(),
-                    results: 'Results would be exported here'
-                };
-                
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `load-test-results-${Date.now()}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
+            async exportResults() {
+                if (!this.currentSessionId) {
+                    alert('No test results to export');
+                    return;
+                }
+
+                try {
+                    // Fetch complete session data
+                    const response = await fetch(`/api/test/results/${this.currentSessionId}`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch results');
+                    }
+                    
+                    const sessionData = await response.json();
+                    
+                    // Create comprehensive export data
+                    const exportData = {
+                        sessionId: this.currentSessionId,
+                        timestamp: new Date().toISOString(),
+                        testConfiguration: sessionData.config,
+                        urls: {
+                            node: sessionData.nodeUrl,
+                            bun: sessionData.bunUrl
+                        },
+                        results: {
+                            winner: sessionData.comparison?.winner || 'unknown',
+                            summary: {
+                                node: {
+                                    totalRequests: sessionData.results.node.requests,
+                                    successfulResponses: sessionData.results.node.responses,
+                                    totalErrors: sessionData.results.node.errors,
+                                    errorRate: ((sessionData.results.node.errors / Math.max(sessionData.results.node.requests, 1)) * 100).toFixed(2) + '%',
+                                    avgResponseTime: Math.round(sessionData.results.node.avgResponseTime) + 'ms',
+                                    requestsPerSecond: sessionData.results.node.requestsPerSecond,
+                                    percentiles: sessionData.results.node.percentiles
+                                },
+                                bun: {
+                                    totalRequests: sessionData.results.bun.requests,
+                                    successfulResponses: sessionData.results.bun.responses,
+                                    totalErrors: sessionData.results.bun.errors,
+                                    errorRate: ((sessionData.results.bun.errors / Math.max(sessionData.results.bun.requests, 1)) * 100).toFixed(2) + '%',
+                                    avgResponseTime: Math.round(sessionData.results.bun.avgResponseTime) + 'ms',
+                                    requestsPerSecond: sessionData.results.bun.requestsPerSecond,
+                                    percentiles: sessionData.results.bun.percentiles
+                                }
+                            },
+                            performanceGaps: sessionData.comparison?.performanceGap,
+                            advantages: {
+                                node: sessionData.comparison?.nodeAdvantages || [],
+                                bun: sessionData.comparison?.bunAdvantages || []
+                            },
+                            errorBreakdown: {
+                                node: sessionData.results.node.errorTypes || {},
+                                bun: sessionData.results.bun.errorTypes || {}
+                            }
+                        },
+                        duration: {
+                            startTime: sessionData.startTime,
+                            endTime: sessionData.endTime,
+                            totalSeconds: sessionData.config.duration
+                        }
+                    };
+                    
+                    // Create and download the file
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `battle-results-${this.currentSessionId}-${Date.now()}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    
+                    this.logMessage('📥 Battle results exported successfully');
+                } catch (error) {
+                    console.error('Export failed:', error);
+                    alert('Failed to export results');
+                }
             }
 
             startNewTest() {
@@ -1078,6 +1385,148 @@
                 document.getElementById('resultsSection').classList.remove('active');
                 
                 this.currentSessionId = null;
+            }
+
+            renderPerformanceGapChart(container, gaps, stats) {
+                const nodeAvgTime = Math.round(stats.node.avgResponseTime || 0);
+                const bunAvgTime = Math.round(stats.bun.avgResponseTime || 0);
+                const nodeRps = Math.round((stats.node.requestsPerSecond || 0) * 100) / 100;
+                const bunRps = Math.round((stats.bun.requestsPerSecond || 0) * 100) / 100;
+                
+                container.innerHTML = `
+                    <div class="chart-container">
+                        <h3>Performance Gap Analysis</h3>
+                        <div class="bar-chart">
+                            <div class="bar-group">
+                                <div class="bar node" style="height: ${(nodeRps / Math.max(nodeRps, bunRps)) * 100}%">
+                                    <div class="bar-value">${nodeRps}</div>
+                                </div>
+                                <div class="bar-label">Node.js RPS</div>
+                            </div>
+                            <div class="bar-group">
+                                <div class="bar bun" style="height: ${(bunRps / Math.max(nodeRps, bunRps)) * 100}%">
+                                    <div class="bar-value">${bunRps}</div>
+                                </div>
+                                <div class="bar-label">Bun RPS</div>
+                            </div>
+                        </div>
+                        <div class="stats-summary">
+                            <div class="summary-item">
+                                <strong>Response Time Gap:</strong> ${gaps.responseTime.toFixed(0)}ms 
+                                <span class="winner">(${nodeAvgTime < bunAvgTime ? '🟢 Node.js' : '🟠 Bun'} faster)</span>
+                            </div>
+                            <div class="summary-item">
+                                <strong>Throughput Gap:</strong> ${gaps.throughput.toFixed(1)} RPS 
+                                <span class="winner">(${nodeRps > bunRps ? '🟢 Node.js' : '🟠 Bun'} higher)</span>
+                            </div>
+                            <div class="summary-item">
+                                <strong>Error Rate Gap:</strong> ${gaps.errorRate.toFixed(2)}% 
+                                <span class="winner">(${stats.node.errors < stats.bun.errors ? '🟢 Node.js' : '🟠 Bun'} more reliable)</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderResponseTimeChart(container, stats) {
+                const nodeP50 = Math.round(stats.node.percentiles?.p50 || stats.node.avgResponseTime);
+                const nodeP95 = Math.round(stats.node.percentiles?.p95 || stats.node.avgResponseTime * 1.5);
+                const nodeP99 = Math.round(stats.node.percentiles?.p99 || stats.node.avgResponseTime * 2);
+                
+                const bunP50 = Math.round(stats.bun.percentiles?.p50 || stats.bun.avgResponseTime);
+                const bunP95 = Math.round(stats.bun.percentiles?.p95 || stats.bun.avgResponseTime * 1.5);
+                const bunP99 = Math.round(stats.bun.percentiles?.p99 || stats.bun.avgResponseTime * 2);
+                
+                const maxLatency = Math.max(nodeP99, bunP99);
+                
+                container.innerHTML = `
+                    <div class="chart-container">
+                        <h3>Response Time Comparison</h3>
+                        <div class="percentile-chart">
+                            <div class="percentile-row">
+                                <div class="percentile-label">P50</div>
+                                <div class="percentile-bars">
+                                    <div class="percentile-bar node" style="width: ${(nodeP50 / maxLatency) * 100}%">${nodeP50}ms</div>
+                                    <div class="percentile-bar bun" style="width: ${(bunP50 / maxLatency) * 100}%">${bunP50}ms</div>
+                                </div>
+                            </div>
+                            <div class="percentile-row">
+                                <div class="percentile-label">P95</div>
+                                <div class="percentile-bars">
+                                    <div class="percentile-bar node" style="width: ${(nodeP95 / maxLatency) * 100}%">${nodeP95}ms</div>
+                                    <div class="percentile-bar bun" style="width: ${(bunP95 / maxLatency) * 100}%">${bunP95}ms</div>
+                                </div>
+                            </div>
+                            <div class="percentile-row">
+                                <div class="percentile-label">P99</div>
+                                <div class="percentile-bars">
+                                    <div class="percentile-bar node" style="width: ${(nodeP99 / maxLatency) * 100}%">${nodeP99}ms</div>
+                                    <div class="percentile-bar bun" style="width: ${(bunP99 / maxLatency) * 100}%">${bunP99}ms</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="legend">
+                            <span class="legend-item"><span class="legend-color node"></span> Node.js</span>
+                            <span class="legend-item"><span class="legend-color bun"></span> Bun</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderErrorAnalysis(container, stats) {
+                const nodeErrors = stats.node.errors || 0;
+                const bunErrors = stats.bun.errors || 0;
+                const nodeErrorRate = ((nodeErrors / Math.max(stats.node.requests || 1, 1)) * 100).toFixed(2);
+                const bunErrorRate = ((bunErrors / Math.max(stats.bun.requests || 1, 1)) * 100).toFixed(2);
+                
+                container.innerHTML = `
+                    <div class="chart-container">
+                        <h3>Error Analysis</h3>
+                        <div class="error-breakdown">
+                            <div class="error-list ${nodeErrors > 0 ? '' : 'success'}">
+                                <h4>🟢 Node.js Errors</h4>
+                                ${nodeErrors > 0 ? `
+                                    <div class="error-summary">
+                                        <strong>${nodeErrors} total errors (${nodeErrorRate}%)</strong>
+                                    </div>
+                                    ${Object.entries(stats.node.errorTypes || {}).map(([type, count]) => `
+                                        <div class="error-item">
+                                            <span class="error-type">${type}</span>
+                                            <span class="error-count">${count}</span>
+                                        </div>
+                                    `).join('')}
+                                ` : '<div class="no-errors">✅ No errors detected!</div>'}
+                            </div>
+                            <div class="error-list ${bunErrors > 0 ? '' : 'success'}">
+                                <h4>🟠 Bun Errors</h4>
+                                ${bunErrors > 0 ? `
+                                    <div class="error-summary">
+                                        <strong>${bunErrors} total errors (${bunErrorRate}%)</strong>
+                                    </div>
+                                    ${Object.entries(stats.bun.errorTypes || {}).map(([type, count]) => `
+                                        <div class="error-item">
+                                            <span class="error-type">${type}</span>
+                                            <span class="error-count">${count}</span>
+                                        </div>
+                                    `).join('')}
+                                ` : '<div class="no-errors">✅ No errors detected!</div>'}
+                            </div>
+                        </div>
+                        <div class="reliability-score">
+                            <h4>Reliability Score</h4>
+                            <div class="score-comparison">
+                                <div class="score-item">
+                                    <span class="runtime">Node.js</span>
+                                    <span class="score ${nodeErrorRate < 1 ? 'excellent' : nodeErrorRate < 5 ? 'good' : 'poor'}">${(100 - parseFloat(nodeErrorRate)).toFixed(1)}%</span>
+                                </div>
+                                <div class="score-item">
+                                    <span class="runtime">Bun</span>
+                                    <span class="score ${bunErrorRate < 1 ? 'excellent' : bunErrorRate < 5 ? 'good' : 'poor'}">${(100 - parseFloat(bunErrorRate)).toFixed(1)}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
             }
         }
 

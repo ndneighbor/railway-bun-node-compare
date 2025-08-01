@@ -10,22 +10,21 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # Async runtime
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 
 # WebSocket support
 axum-extra = { version = "0.9", features = ["typed-header"] }
-tokio-tungstenite = "0.21"
 futures-util = "0.3"
 
 # HTTP client for making requests
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # JSON serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # UUID generation
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Logging
 tracing = "0.1"
@@ -39,9 +38,6 @@ dotenvy = "0.15"
 
 # Statistics
 hdrhistogram = "7.5"
-
-# Real-time metrics
-prometheus = "0.13"
 
 [dev-dependencies]
 # Testing

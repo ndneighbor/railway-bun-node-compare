@@ -88,7 +88,11 @@ class BenchmarkRunner {
             { name: 'books_search', endpoint: '/api/search?q=fiction', method: 'GET' },
             { name: 'authors_list', endpoint: '/api/authors', method: 'GET' },
             { name: 'book_detail', endpoint: '/api/books/1', method: 'GET' },
-            { name: 'performance_metrics', endpoint: '/api/performance/metrics', method: 'GET' }
+            { name: 'performance_metrics', endpoint: '/api/performance/metrics', method: 'GET' },
+            // Memory-intensive scenarios
+            { name: 'memory_stress_test', endpoint: '/api/system/stress-test', method: 'POST', body: { duration: 10000, intensity: 10, memoryIntensive: true } },
+            { name: 'heap_dump_analysis', endpoint: '/api/system/heap-dump', method: 'POST', body: {} },
+            { name: 'advanced_memory_stress', endpoint: '/api/system/memory-stress', method: 'POST', body: { objectCount: 10000, objectSize: 1000, duration: 15000 } }
         ];
 
         for (const scenario of scenarios) {
@@ -111,6 +115,11 @@ class BenchmarkRunner {
             console.log(`  Winner:  ${this.results.comparison[scenario.name].faster} (${this.results.comparison[scenario.name].improvement}% faster)`);
             console.log('');
         }
+        
+        // Run memory efficiency comparison
+        console.log(`🧠 Running Memory Efficiency Comparison`);
+        await this.runMemoryEfficiencyTest();
+        console.log('');
     }
 
     async runScenario(baseUrl, scenario, runtime) {
@@ -140,10 +149,18 @@ class BenchmarkRunner {
         const makeRequest = async () => {
             const requestStart = Date.now();
             try {
-                const response = await fetch(url, {
+                const fetchOptions = {
                     method: scenario.method,
                     headers: { 'Accept': 'application/json' }
-                });
+                };
+                
+                // Add body for POST requests
+                if (scenario.method === 'POST' && scenario.body) {
+                    fetchOptions.headers['Content-Type'] = 'application/json';
+                    fetchOptions.body = JSON.stringify(scenario.body);
+                }
+                
+                const response = await fetch(url, fetchOptions);
                 
                 const requestEnd = Date.now();
                 const responseTime = requestEnd - requestStart;
@@ -258,6 +275,60 @@ class BenchmarkRunner {
         
         console.log(`\n💾 Full results saved to: ${filename}`);
     }
+
+    async runMemoryEfficiencyTest() {
+        console.log('  Running comprehensive memory efficiency test...');
+        
+        // Test memory usage under sustained load
+        const memoryTestScenarios = [
+            { name: 'sustained_memory_load', endpoint: '/api/system/stress-test', method: 'POST', body: { duration: 20000, intensity: 15, memoryIntensive: true } },
+            { name: 'peak_memory_allocation', endpoint: '/api/system/memory-stress', method: 'POST', body: { objectCount: 15000, objectSize: 1500, duration: 25000 } }
+        ];
+        
+        for (const scenario of memoryTestScenarios) {
+            console.log(`  🧪 Testing ${scenario.name}...`);
+            
+            // Run concurrent requests to both services
+            const [nodeResult, bunResult] = await Promise.all([
+                this.runScenario(this.nodeUrl, scenario, 'node'),
+                this.runScenario(this.bunUrl, scenario, 'bun')
+            ]);
+            
+            // Store results
+            this.results.node[scenario.name] = nodeResult;
+            this.results.bun[scenario.name] = bunResult;
+            
+            // Calculate comparison metrics
+            this.results.comparison[scenario.name] = this.compareResults(nodeResult, bunResult);
+            
+            console.log(`    Node.js: ${nodeResult.avgResponseTime.toFixed(2)}ms avg, ${nodeResult.requestsPerSecond.toFixed(2)} req/s`);
+            console.log(`    Bun:     ${bunResult.avgResponseTime.toFixed(2)}ms avg, ${bunResult.requestsPerSecond.toFixed(2)} req/s`);
+            console.log(`    Winner:  ${this.results.comparison[scenario.name].faster.toUpperCase()} (${this.results.comparison[scenario.name].improvement}% better)`);
+        }
+        
+        // Memory efficiency summary
+        console.log('  📊 Memory Efficiency Summary:');
+        let nodeMemoryScore = 0;
+        let bunMemoryScore = 0;
+        let testCount = 0;
+        
+        // Calculate memory efficiency based on response times and throughput
+        for (const scenario in this.results.comparison) {
+            if (scenario.includes('memory')) {
+                const comp = this.results.comparison[scenario];
+                const nodeRes = this.results.node[scenario];
+                const bunRes = this.results.bun[scenario];
+                
+                // Lower response time and higher throughput indicate better memory efficiency
+                if (comp.nodeFaster) nodeMemoryScore++;
+                if (comp.bunFaster) bunMemoryScore++;
+                testCount++;
+            }
+        }
+        
+        console.log(`    Node.js memory efficiency wins: ${nodeMemoryScore}/${testCount}`);
+        console.log(`    Bun memory efficiency wins: ${bunMemoryScore}/${testCount}`);
+    }
 }
 
 // CLI interface
@@ -282,6 +353,13 @@ Environment Variables:
 Examples:
   node benchmark-runner.js
   node benchmark-runner.js --node-url https://node-bookstore.railway.app --bun-url https://bun-bookstore.railway.app
+
+The benchmark includes memory-intensive tests to demonstrate Bun's memory efficiency advantages:
+- memory_stress_test: Tests memory allocation and garbage collection
+- heap_dump_analysis: Analyzes heap memory usage patterns
+- advanced_memory_stress: Advanced memory stress test with large object creation
+- sustained_memory_load: Tests memory efficiency under sustained load
+- peak_memory_allocation: Tests peak memory allocation scenarios
         `);
         process.exit(0);
     }

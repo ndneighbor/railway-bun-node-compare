@@ -47,33 +47,78 @@ router.get('/metrics', (req, res) => {
     });
 });
 
-// GET /api/system/stress-test - Run a CPU intensive task for testing
+// POST /api/system/stress-test - Run a CPU or memory intensive task for testing
 router.post('/stress-test', (req, res) => {
-    const { duration = 5000, intensity = 1 } = req.body;
+    const { duration = 5000, intensity = 1, memoryIntensive = false } = req.body;
     
     const startTime = Date.now();
     const endTime = startTime + duration;
     
-    // CPU intensive task
-    const stressTest = () => {
+    if (memoryIntensive) {
+        // Memory intensive task - create large data structures
+        const largeDataSet = [];
         let count = 0;
-        while (Date.now() < endTime && count < intensity * 1000000) {
-            Math.sqrt(Math.random() * 1000000);
+        
+        while (Date.now() < endTime) {
+            // Create complex nested objects with strings and arrays
+            largeDataSet.push({
+                id: count,
+                data: 'x'.repeat(1000 * intensity), // Large strings
+                nested: Array.from({ length: 100 * intensity }, (_, i) => ({
+                    index: i,
+                    value: Math.random(),
+                    text: `item_${i}_`.repeat(50 * intensity),
+                    subArray: Array.from({ length: 10 * intensity }, () => Math.random())
+                })),
+                timestamp: Date.now(),
+                metadata: {
+                    source: 'stress-test',
+                    version: 1,
+                    tags: Array.from({ length: 50 * intensity }, (_, i) => `tag_${i}`)
+                }
+            });
+            
             count++;
+            
+            // Periodically clear some data to simulate real-world memory management
+            if (count % (100 * intensity) === 0) {
+                // Remove oldest entries to prevent unbounded growth
+                if (largeDataSet.length > 50 * intensity) {
+                    largeDataSet.splice(0, 25 * intensity);
+                }
+            }
         }
-        return count;
-    };
-    
-    const operations = stressTest();
-    const actualDuration = Date.now() - startTime;
-    
-    res.json({
-        message: 'Stress test completed',
-        duration: actualDuration,
-        operations,
-        operationsPerSecond: Math.round(operations / (actualDuration / 1000)),
-        memoryAfter: process.memoryUsage()
-    });
+        
+        res.json({
+            message: 'Memory intensive stress test completed',
+            duration: Date.now() - startTime,
+            objectsCreated: count,
+            memoryAfter: process.memoryUsage(),
+            runtime: 'node'
+        });
+    } else {
+        // CPU intensive task (original)
+        const stressTest = () => {
+            let count = 0;
+            while (Date.now() < endTime && count < intensity * 1000000) {
+                Math.sqrt(Math.random() * 1000000);
+                count++;
+            }
+            return count;
+        };
+        
+        const operations = stressTest();
+        const actualDuration = Date.now() - startTime;
+        
+        res.json({
+            message: 'CPU intensive stress test completed',
+            duration: actualDuration,
+            operations,
+            operationsPerSecond: Math.round(operations / (actualDuration / 1000)),
+            memoryAfter: process.memoryUsage(),
+            runtime: 'node'
+        });
+    }
 });
 
 // GET /api/system/heap-dump - Trigger garbage collection and get memory info
@@ -118,6 +163,89 @@ router.post('/heap-dump', (req, res) => {
         },
         gcAvailable: !!global.gc
     });
+});
+
+// POST /api/system/memory-stress - Advanced memory stress test
+router.post('/memory-stress', async (req, res) => {
+    try {
+        const { 
+            objectCount = 10000, 
+            objectSize = 1000,
+            duration = 30000,
+            gcInterval = 5000
+        } = req.body;
+        
+        const startTime = Date.now();
+        const endTime = startTime + duration;
+        let totalObjectsCreated = 0;
+        let peakMemory = 0;
+        
+        // Create objects in batches
+        const batchSize = 1000;
+        const batches = Math.ceil(objectCount / batchSize);
+        
+        for (let batch = 0; batch < batches && Date.now() < endTime; batch++) {
+            const currentBatchSize = Math.min(batchSize, objectCount - (batch * batchSize));
+            
+            // Create complex objects with various data types
+            const batchObjects = Array.from({ length: currentBatchSize }, (_, i) => ({
+                id: totalObjectsCreated + i,
+                // Large string data
+                content: 'a'.repeat(objectSize),
+                // Large array data
+                dataArray: Array.from({ length: objectSize / 10 }, (_, j) => ({
+                    index: j,
+                    value: Math.random(),
+                    nestedContent: 'b'.repeat(50),
+                    timestamp: Date.now()
+                })),
+                // Object with many properties
+                properties: Object.fromEntries(
+                    Array.from({ length: 100 }, (_, k) => [`prop_${k}`, `value_${k}_`.repeat(20)])
+                ),
+                createdAt: new Date().toISOString()
+            }));
+            
+            totalObjectsCreated += currentBatchSize;
+            
+            // Update peak memory
+            const currentMemory = process.memoryUsage().heapUsed;
+            if (currentMemory > peakMemory) {
+                peakMemory = currentMemory;
+            }
+            
+            // Periodic garbage collection
+            if (global.gc && (batch + 1) % Math.floor(gcInterval / 1000) === 0) {
+                global.gc();
+            }
+            
+            // Small delay to allow for memory monitoring
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // Force final garbage collection
+        if (global.gc) {
+            global.gc();
+        }
+        
+        const finalMemory = process.memoryUsage();
+        
+        res.json({
+            message: 'Advanced memory stress test completed',
+            runtime: 'node',
+            duration: Date.now() - startTime,
+            objectsCreated: totalObjectsCreated,
+            peakMemory: Math.round(peakMemory / 1024 / 1024),
+            finalMemory: {
+                heapUsed: Math.round(finalMemory.heapUsed / 1024 / 1024),
+                heapTotal: Math.round(finalMemory.heapTotal / 1024 / 1024),
+                rss: Math.round(finalMemory.rss / 1024 / 1024)
+            },
+            memoryEfficiency: ((peakMemory - finalMemory.heapUsed) / peakMemory * 100).toFixed(2)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Helper function to get CPU percentage (approximation)

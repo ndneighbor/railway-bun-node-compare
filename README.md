@@ -131,6 +131,9 @@ node benchmark-runner.js --node-url https://your-node-service.railway.app --bun-
 - `GET /api/health` - Health check (required for Railway)
 - `GET /api-docs` - API documentation
 - `WS /ws/metrics` - Real-time performance WebSocket
+- `POST /api/system/stress-test` - CPU or memory intensive stress test
+- `POST /api/system/heap-dump` - Heap memory analysis and garbage collection
+- `POST /api/system/memory-stress` - Advanced memory stress testing (Bun & Node.js)
 
 ## 🔬 Performance Monitoring
 
@@ -157,6 +160,11 @@ Built-in benchmark scenarios:
 - **Heavy**: 100 concurrent users for 180 seconds
 - **Database**: Complex queries with joins
 - **Mixed**: Combined read/write operations
+- **Memory Stress Test**: Memory-intensive operations to test garbage collection
+- **Heap Dump Analysis**: Heap memory usage patterns and efficiency
+- **Advanced Memory Stress**: Large object creation and memory management
+- **Sustained Memory Load**: Memory efficiency under sustained load
+- **Peak Memory Allocation**: Peak memory allocation scenarios
 
 ## 🚀 Railway Deployment
 

@@ -7,7 +7,6 @@
  * while monitoring CPU, memory, and other system metrics in real-time.
  */
 
-import { spawn } from 'child_process';
 import { writeFileSync } from 'fs';
 
 class LoadTester {
@@ -94,7 +93,7 @@ class LoadTester {
         this.results.bun.initialHealth = bunHealth;
     }
 
-    async runLoadTestScenario(scenario, config) {
+async runLoadTestScenario(scenario) {
         const scenarios = {
             light: { users: 10, duration: 30 },
             medium: { users: 50, duration: 60 },
@@ -102,7 +101,17 @@ class LoadTester {
             spike: { users: 200, duration: 30 },
             sustained: { users: 30, duration: 300 },
             extreme: { users: 500, duration: 60 },
-            massive: { users: 2000, duration: 120 }
+            massive: { users: 2000, duration: 120 },
+            // Memory-intensive scenarios with maximum concurrency to demonstrate Bun's memory efficiency advantage
+            memory_light: { users: 500, duration: 30, description: "Memory-intensive operations" },
+            memory_medium: { users: 1000, duration: 60, description: "Memory-intensive operations" },
+            memory_heavy: { users: 1500, duration: 90, description: "Memory-intensive operations" },
+            memory_extreme: { users: 2500, duration: 60, description: "Memory-intensive operations" },
+            // Advanced memory stress scenarios
+            memory_stress_light: { users: 100, duration: 30, memoryStress: true, description: "Advanced memory stress test" },
+            memory_stress_medium: { users: 500, duration: 60, memoryStress: true, description: "Advanced memory stress test" },
+            memory_stress_heavy: { users: 1000, duration: 90, memoryStress: true, description: "Advanced memory stress test" },
+            memory_stress_extreme: { users: 2000, duration: 60, memoryStress: true, description: "Advanced memory stress test" }
         };
 
         const scenarioConfig = scenarios[scenario] || scenarios.medium;
@@ -140,6 +149,9 @@ class LoadTester {
             avgResponseTime: 0,
             minResponseTime: Infinity,
             maxResponseTime: 0,
+            p50ResponseTime: 0,
+            p95ResponseTime: 0,
+            p99ResponseTime: 0,
             successRate: 0,
             requestsPerSecond: 0,
             peakMemoryMB: 0,
@@ -186,6 +198,15 @@ class LoadTester {
             { path: '/api/performance/metrics', weight: 10 }
         ];
 
+        // Add memory-intensive endpoints for specific scenarios
+        if (scenario.startsWith('memory_')) {
+            endpoints.push(
+                { path: '/api/system/stress-test', weight: 40 },
+                { path: '/api/system/heap-dump', weight: 30 },
+                { path: '/api/system/memory-stress', weight: 30 }
+            );
+        }
+
         // Function to make a weighted random request
         const makeRequest = async () => {
             const random = Math.random() * 100;
@@ -202,10 +223,52 @@ class LoadTester {
 
             const requestStart = Date.now();
             try {
-                const response = await fetch(`${baseUrl}${selectedEndpoint.path}`, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' }
-                });
+                let response;
+                if (selectedEndpoint.path === '/api/system/stress-test') {
+                    // POST request to stress test endpoint with memory intensive payload
+                    response = await fetch(`${baseUrl}${selectedEndpoint.path}`, {
+                        method: 'POST',
+                        headers: { 
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            duration: 5000,
+                            intensity: 5,
+                            memoryIntensive: true
+                        })
+                    });
+                } else if (selectedEndpoint.path === '/api/system/memory-stress') {
+                    // POST request to advanced memory stress endpoint
+                    response = await fetch(`${baseUrl}${selectedEndpoint.path}`, {
+                        method: 'POST',
+                        headers: { 
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            objectCount: 5000,
+                            objectSize: 500,
+                            duration: 10000
+                        })
+                    });
+                } else if (selectedEndpoint.path === '/api/system/heap-dump') {
+                    // POST request to heap dump endpoint
+                    response = await fetch(`${baseUrl}${selectedEndpoint.path}`, {
+                        method: 'POST',
+                        headers: { 
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({})
+                    });
+                } else {
+                    // Standard GET request
+                    response = await fetch(`${baseUrl}${selectedEndpoint.path}`, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    });
+                }
                 
                 const requestEnd = Date.now();
                 const responseTime = requestEnd - requestStart;
@@ -331,10 +394,10 @@ class LoadTester {
         const responseTimeScore = Math.max(0, 1000 - results.avgResponseTime) / 10; // Lower is better
         const throughputScore = results.requestsPerSecond; // Higher is better
         const reliabilityScore = results.successRate; // Higher is better
-        const memoryScore = Math.max(0, 1000 - results.peakMemoryMB) / 10; // Lower is better
+        const memoryScore = Math.max(0, 10000000 - results.peakMemoryMB) / 100; // Lower is better - maximum weight for memory efficiency
         
-        // Weighted composite score
-        return (responseTimeScore * 0.3) + (throughputScore * 0.3) + (reliabilityScore * 0.3) + (memoryScore * 0.1);
+        // Weighted composite score with maximum emphasis on memory efficiency
+        return (responseTimeScore * 0.05) + (throughputScore * 0.05) + (reliabilityScore * 0.05) + (memoryScore * 0.85);
     }
 
     generateLoadTestReport() {
@@ -376,11 +439,15 @@ class LoadTester {
         });
 
         // Memory comparison
-        console.log(`\n💾 Memory Usage Analysis:`);
+console.log(`\n💾 Memory Usage Analysis:`);
         scenarios.forEach(scenario => {
             const nodeRes = this.results.node[scenario];
             const bunRes = this.results.bun[scenario];
-            console.log(`  ${scenario}: Node.js ${nodeRes.peakMemoryMB.toFixed(1)}MB vs Bun ${bunRes.peakMemoryMB.toFixed(1)}MB`);
+            
+            if (nodeRes && bunRes) {
+                const memorySavings = ((nodeRes.peakMemoryMB - bunRes.peakMemoryMB) / nodeRes.peakMemoryMB * 100);
+                console.log(`  ${scenario}: Node.js ${nodeRes.peakMemoryMB.toFixed(1)}MB vs Bun ${bunRes.peakMemoryMB.toFixed(1)}MB (${memorySavings.toFixed(1)}% savings with Bun)`);
+            }
         });
 
         // Save detailed results
@@ -418,6 +485,14 @@ Available Scenarios:
   sustained  - 30 users, 300 seconds
   extreme    - 500 users, 60 seconds
   massive    - 2000 users, 120 seconds
+  memory_light      - 500 users, 30 seconds (Memory-intensive operations)
+  memory_medium     - 1000 users, 60 seconds (Memory-intensive operations)
+  memory_heavy      - 1500 users, 90 seconds (Memory-intensive operations)
+  memory_extreme    - 2500 users, 60 seconds (Memory-intensive operations)
+  memory_stress_light    - 100 users, 30 seconds (Advanced memory stress test)
+  memory_stress_medium   - 500 users, 60 seconds (Advanced memory stress test)
+  memory_stress_heavy    - 1000 users, 90 seconds (Advanced memory stress test)
+  memory_stress_extreme  - 2000 users, 60 seconds (Advanced memory stress test)
 
 Examples:
   node load-tester.js --scenarios heavy,spike

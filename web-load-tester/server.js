@@ -63,7 +63,9 @@ const testConfigurations = {
             '/api/search?q=test',
             '/api/books/1',
             '/api/authors/1',
-            '/api/orders'
+            '/api/orders',
+            '/api/system/stress-test',
+            '/api/system/heap-dump'
         ]
     },
     extreme: {
@@ -76,7 +78,10 @@ const testConfigurations = {
             '/api/search?q=fiction&genre=mystery',
             '/api/authors',
             '/api/books/1',
-            '/api/performance/metrics'
+            '/api/performance/metrics',
+            '/api/system/stress-test',
+            '/api/system/heap-dump',
+            '/api/system/memory-stress'
         ]
     },
     massive: {
@@ -89,7 +94,10 @@ const testConfigurations = {
             '/api/authors',
             '/api/search?q=bestseller',
             '/api/books/1',
-            '/api/orders'
+            '/api/orders',
+            '/api/system/stress-test',
+            '/api/system/heap-dump',
+            '/api/system/memory-stress'
         ]
     }
 };

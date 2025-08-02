@@ -301,7 +301,35 @@ impl LoadTestWorker {
             let request_start = Instant::now();
             self.requests_sent.fetch_add(1, Ordering::Relaxed);
 
-            match self.client.get(&self.target_url).send().await {
+            // Determine request method and payload based on endpoint
+            let response = if self.target_url.contains("/api/system/stress-test") {
+                self.client.post(&self.target_url)
+                    .json(&serde_json::json!({
+                        "duration": 5000,
+                        "intensity": 5,
+                        "memoryIntensive": true
+                    }))
+                    .send()
+                    .await
+            } else if self.target_url.contains("/api/system/heap-dump") {
+                self.client.post(&self.target_url)
+                    .json(&serde_json::json!({}))
+                    .send()
+                    .await
+            } else if self.target_url.contains("/api/system/memory-stress") {
+                self.client.post(&self.target_url)
+                    .json(&serde_json::json!({
+                        "objectCount": 5000,
+                        "objectSize": 500,
+                        "duration": 10000
+                    }))
+                    .send()
+                    .await
+            } else {
+                self.client.get(&self.target_url).send().await
+            };
+
+            match response {
                 Ok(response) => {
                     let latency = request_start.elapsed();
                     let latency_ms = latency.as_millis() as u64;

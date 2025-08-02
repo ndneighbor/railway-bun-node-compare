@@ -553,15 +553,44 @@ async function runFetchTest(url, runtime, config, sessionId = null) {
                     const testUrl = baseUrl + endpoint;
                     const requestStart = Date.now();
                     
+                    // Determine request method and payload based on endpoint
+                    let method = 'GET';
+                    let body = undefined;
+                    let headers = {
+                        'User-Agent': `LoadTester-${runtime}-Fetch`,
+                        'Accept': 'application/json',
+                        'Connection': 'keep-alive'
+                    };
+                    
+                    // Memory-intensive endpoints require POST requests with specific payloads
+                    if (endpoint.includes('/api/system/stress-test')) {
+                        method = 'POST';
+                        headers['Content-Type'] = 'application/json';
+                        body = JSON.stringify({
+                            duration: 5000,
+                            intensity: 5,
+                            memoryIntensive: true
+                        });
+                    } else if (endpoint.includes('/api/system/heap-dump')) {
+                        method = 'POST';
+                        headers['Content-Type'] = 'application/json';
+                        body = JSON.stringify({});
+                    } else if (endpoint.includes('/api/system/memory-stress')) {
+                        method = 'POST';
+                        headers['Content-Type'] = 'application/json';
+                        body = JSON.stringify({
+                            objectCount: 5000,
+                            objectSize: 500,
+                            duration: 10000
+                        });
+                    }
+                    
                     try {
                         const response = await fetch(testUrl, {
-                            method: 'GET',
+                            method,
                             timeout: 10000,
-                            headers: {
-                                'User-Agent': `LoadTester-${runtime}-Fetch`,
-                                'Accept': 'application/json',
-                                'Connection': 'keep-alive'
-                            }
+                            headers,
+                            body
                         });
                         
                         const responseTime = Date.now() - requestStart;
